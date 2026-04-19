@@ -7,35 +7,91 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type CachingStorage struct {
 	base     Storage
 	cacheDir string
-	mu       sync.Mutex
+	cacheTTL time.Duration
+	mu       sync.Mutex // for file downloads
+
+	cacheMu           sync.RWMutex
+	booksCache        []BookInfo
+	booksFetchedAt    time.Time
+	versionsCache     map[string][]VersionInfo
+	versionsFetchedAt map[string]time.Time
 }
 
-func NewCachingStorage(base Storage, cacheDir string) (*CachingStorage, error) {
+func NewCachingStorage(base Storage, cacheDir string, cacheTTL time.Duration) (*CachingStorage, error) {
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, err
 	}
 	return &CachingStorage{
-		base:     base,
-		cacheDir: cacheDir,
+		base:              base,
+		cacheDir:          cacheDir,
+		cacheTTL:          cacheTTL,
+		versionsCache:     make(map[string][]VersionInfo),
+		versionsFetchedAt: make(map[string]time.Time),
 	}, nil
 }
 
 func (c *CachingStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
-	return c.base.ListBooks(ctx)
+	c.cacheMu.RLock()
+	if time.Since(c.booksFetchedAt) < c.cacheTTL {
+		defer c.cacheMu.RUnlock()
+		return c.booksCache, nil
+	}
+	c.cacheMu.RUnlock()
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	// Re-check after acquiring write lock
+	if time.Since(c.booksFetchedAt) < c.cacheTTL {
+		return c.booksCache, nil
+	}
+
+	books, err := c.base.ListBooks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c.booksCache = books
+	c.booksFetchedAt = time.Now()
+	return books, nil
 }
 
 func (c *CachingStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
-	return c.base.ListVersions(ctx, book)
+	c.cacheMu.RLock()
+	if time.Since(c.versionsFetchedAt[book]) < c.cacheTTL {
+		defer c.cacheMu.RUnlock()
+		return c.versionsCache[book], nil
+	}
+	c.cacheMu.RUnlock()
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	// Re-check after acquiring write lock
+	if time.Since(c.versionsFetchedAt[book]) < c.cacheTTL {
+		return c.versionsCache[book], nil
+	}
+
+	versions, err := c.base.ListVersions(ctx, book)
+	if err != nil {
+		return nil, err
+	}
+
+	c.versionsCache[book] = versions
+	c.versionsFetchedAt[book] = time.Now()
+	return versions, nil
 }
 
 func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
 	// 1. Get remote info to check if cache is up to date
-	versions, err := c.base.ListVersions(ctx, book)
+	// We call our own ListVersions which now uses caching
+	versions, err := c.ListVersions(ctx, book)
 	if err != nil {
 		return nil, err
 	}
@@ -119,5 +175,11 @@ func (c *CachingStorage) UploadZip(ctx context.Context, book, version string, r 
 	// Invalidate cache on upload
 	cachePath := filepath.Join(c.cacheDir, book, version+".zip")
 	_ = os.Remove(cachePath)
+
+	c.cacheMu.Lock()
+	c.booksFetchedAt = time.Time{}           // force refresh books list
+	delete(c.versionsFetchedAt, book)        // force refresh versions for this book
+	c.cacheMu.Unlock()
+
 	return nil
 }

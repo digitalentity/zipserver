@@ -16,7 +16,10 @@
         <tr><th>Book Name</th></tr>
         {{range .}}
         <tr>
-            <td><a href="/{{.Name}}/">{{.Name}}</a></td>
+            <td>
+                <a href="/{{.Name}}/">{{.Name}}</a>
+                <span style="margin-left: 20px;"><a href="/{{.Name}}/latest/" style="font-weight: normal; font-size: 0.9em;">[Latest]</a></span>
+            </td>
         </tr>
         {{end}}
     </table>

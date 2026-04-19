@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{.BookName}} Versions - Zipserver</title>
+    <title>{{.BookName}} versions - Zipserver</title>
     <style>
         body { font-family: sans-serif; margin: 40px; line-height: 1.6; }
         table { border-collapse: collapse; width: 100%; }
@@ -14,6 +14,9 @@
 <body>
     <a href="/" class="back">← Back to Books</a>
     <h1>Versions for {{.BookName}}</h1>
+    <div style="margin-bottom: 20px;">
+        <a href="/{{.BookName}}/latest/" style="font-weight: normal; font-size: 0.9em;">Permanent link to latest version</a>
+    </div>
     <table>
         <tr><th>Version</th><th>Last Modified</th></tr>
         {{range .Versions}}

@@ -1,7 +1,10 @@
 port: "8080"
 storage_type: "local" # options: "local", "gcs", "drive"
 zip_dir: "./publish"   # for "local"
-cache_dir: "./cache"   # for cloud caching
+
+cache:
+  dir: "./cache"   # for cloud caching
+  ttl: "5m"        # in-memory cache for book/version lists
 
 gcs:
   bucket: "my-zips-bucket"
@@ -15,9 +18,12 @@ auth:
   enabled: true
   client_id: "YOUR_GOOGLE_CLIENT_ID"
   client_secret: "YOUR_GOOGLE_CLIENT_SECRET"
-  redirect_url: "http://localhost:8080/callback"
+  redirect_url: "http://localhost:8080/_/callback"
   allowed_users:
     - "*@company.com"
     - "user@thirdparty.com"
   session_key: "super-secret-session-key"
-  upload_token: "your-secret-upload-token" # for Bearer authentication
+
+upload:
+  enabled: true
+  token: "your-secret-upload-token" # for Bearer authentication

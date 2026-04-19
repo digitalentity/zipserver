@@ -3,9 +3,11 @@ package storage
 import (
 	"archive/zip"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func createDummyZip(t *testing.T, path string) {
@@ -73,5 +75,60 @@ func TestLocalStorage(t *testing.T) {
 	}
 	if len(zr.File) != 1 || zr.File[0].Name != "test.txt" {
 		t.Errorf("unexpected zip content")
+	}
+}
+
+type countStorage struct {
+	Storage
+	listCalls int
+}
+
+func (c *countStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
+	c.listCalls++
+	return []BookInfo{{Name: "book1"}}, nil
+}
+
+func (c *countStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
+	c.listCalls++
+	return []VersionInfo{{Name: "v1"}}, nil
+}
+
+func (c *countStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	return nil
+}
+
+func TestCachingStorageTTL(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "cache-test-*")
+	defer os.RemoveAll(tmpDir)
+
+	base := &countStorage{}
+	ttl := 100 * time.Millisecond
+	cs, _ := NewCachingStorage(base, tmpDir, ttl)
+	ctx := context.Background()
+
+	// 1. Initial fetch
+	cs.ListBooks(ctx)
+	if base.listCalls != 1 {
+		t.Errorf("expected 1 call, got %d", base.listCalls)
+	}
+
+	// 2. Cached fetch
+	cs.ListBooks(ctx)
+	if base.listCalls != 1 {
+		t.Errorf("expected still 1 call (cached), got %d", base.listCalls)
+	}
+
+	// 3. Wait for TTL
+	time.Sleep(150 * time.Millisecond)
+	cs.ListBooks(ctx)
+	if base.listCalls != 2 {
+		t.Errorf("expected 2 calls after TTL, got %d", base.listCalls)
+	}
+
+	// 4. Invalidation on upload
+	cs.UploadZip(ctx, "book1", "v2", nil)
+	cs.ListBooks(ctx)
+	if base.listCalls != 3 {
+		t.Errorf("expected 3 calls after invalidation, got %d", base.listCalls)
 	}
 }

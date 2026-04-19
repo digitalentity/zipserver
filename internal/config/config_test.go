@@ -43,9 +43,12 @@ gcs:
 	if cfg.GCS.Bucket != "test-bucket" {
 		t.Errorf("expected bucket test-bucket, got %s", cfg.GCS.Bucket)
 	}
-	// Test default cache_dir
-	if cfg.CacheDir != "./cache" {
-		t.Errorf("expected default cache_dir ./cache, got %s", cfg.CacheDir)
+	// Test default cache settings
+	if cfg.Cache.Dir != "./cache" {
+		t.Errorf("expected default cache.dir ./cache, got %s", cfg.Cache.Dir)
+	}
+	if cfg.Cache.TTL != "1m" {
+		t.Errorf("expected default cache.ttl 1m, got %s", cfg.Cache.TTL)
 	}
 }
 
@@ -72,5 +75,49 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.ZipDir != "./publish" {
 		t.Errorf("expected default zip_dir ./publish, got %s", cfg.ZipDir)
+	}
+}
+
+func TestLoadUploadConfig(t *testing.T) {
+	content := `
+upload:
+  enabled: true
+  token: "config-token"
+`
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	// Test config file values
+	cfg, err := Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cfg.Upload.Enabled {
+		t.Error("expected upload.enabled to be true")
+	}
+	if cfg.Upload.Token != "config-token" {
+		t.Errorf("expected upload.token config-token, got %s", cfg.Upload.Token)
+	}
+
+	// Test environment variable override
+	os.Setenv("UPLOAD_TOKEN", "env-token")
+	defer os.Unsetenv("UPLOAD_TOKEN")
+
+	cfg, err = Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Upload.Token != "env-token" {
+		t.Errorf("expected upload.token env-token, got %s", cfg.Upload.Token)
 	}
 }

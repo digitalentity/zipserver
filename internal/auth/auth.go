@@ -48,7 +48,7 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 
 func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/login" || r.URL.Path == "/callback" {
+		if r.URL.Path == "/_/login" || r.URL.Path == "/_/callback" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -58,7 +58,7 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			// Save the target URL to redirect back after login
 			session.Values["next"] = r.URL.String()
 			session.Save(r, w)
-			http.Redirect(w, r, "/login", http.StatusFound)
+			http.Redirect(w, r, "/_/login", http.StatusFound)
 			return
 		}
 

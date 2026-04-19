@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/zip"
+	"context"
 	"embed"
 	"html/template"
 	"io"
@@ -68,6 +69,15 @@ func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	version := parts[1]
+	if version == "latest" {
+		var err error
+		version, err = s.getLatestVersion(r.Context(), book)
+		if err != nil || version == "" {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
 	innerPath := ""
 	if len(parts) > 2 {
 		innerPath = strings.Join(parts[2:], "/")
@@ -77,6 +87,22 @@ func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.serveFromZip(w, r, book, version, innerPath)
+}
+
+func (s *Server) getLatestVersion(ctx context.Context, book string) (string, error) {
+	versions, err := s.storage.ListVersions(ctx, book)
+	if err != nil {
+		return "", err
+	}
+	if len(versions) == 0 {
+		return "", nil
+	}
+
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].Time.After(versions[j].Time)
+	})
+
+	return versions[0].Name, nil
 }
 
 func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +152,10 @@ func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book 
 		return
 	}
 
+	sort.Slice(versionsInfo, func(i, j int) bool {
+		return versionsInfo[i].Time.After(versionsInfo[j].Time)
+	})
+
 	var versions []ZipFile
 	for _, f := range versionsInfo {
 		versions = append(versions, ZipFile{
@@ -134,10 +164,6 @@ func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book 
 			Path: f.Path,
 		})
 	}
-
-	sort.Slice(versions, func(i, j int) bool {
-		return versions[i].Time > versions[j].Time
-	})
 
 	data := VersionPageData{
 		BookName: book,

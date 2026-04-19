@@ -1,0 +1,5 @@
+zipserver
+.git/
+internal/server/zipserver
+*.log
+.DS_Store

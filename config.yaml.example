@@ -1,0 +1,20 @@
+port: "8080"
+storage_type: "local" # options: "local", "gcs", "drive"
+zip_dir: "./publish"   # for "local"
+cache_dir: "./cache"   # for cloud caching
+
+gcs:
+  bucket: "my-zips-bucket" # for "gcs"
+
+drive:
+  folder_id: "1abc2def3ghi..." # for "drive"
+
+auth:
+  enabled: true
+  client_id: "YOUR_GOOGLE_CLIENT_ID"
+  client_secret: "YOUR_GOOGLE_CLIENT_SECRET"
+  redirect_url: "http://localhost:8080/callback"
+  allowed_users:
+    - "*@company.com"
+    - "user@thirdparty.com"
+  session_key: "super-secret-session-key"

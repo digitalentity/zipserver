@@ -13,14 +13,17 @@ type AuthConfig struct {
 	RedirectURL  string   `yaml:"redirect_url"`
 	AllowedUsers []string `yaml:"allowed_users"`
 	SessionKey   string   `yaml:"session_key"`
+	UploadToken  string   `yaml:"upload_token"`
 }
 
 type GCSConfig struct {
-	Bucket string `yaml:"bucket"`
+	Bucket          string `yaml:"bucket"`
+	CredentialsFile string `yaml:"credentials_file"`
 }
 
 type DriveConfig struct {
-	FolderID string `yaml:"folder_id"`
+	FolderID        string `yaml:"folder_id"`
+	CredentialsFile string `yaml:"credentials_file"`
 }
 
 type Config struct {
@@ -54,6 +57,10 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.CacheDir == "" {
 		cfg.CacheDir = "./cache"
+	}
+
+	if os.Getenv("UPLOAD_TOKEN") != "" {
+		cfg.Auth.UploadToken = os.Getenv("UPLOAD_TOKEN")
 	}
 
 	return &cfg, nil

@@ -1,0 +1,15 @@
+services:
+  zipserver:
+    build: .
+    image: zipserver:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/root/config.yaml
+      - ./publish:/root/publish
+      - ./cache:/root/cache
+    environment:
+      # You can override config.yaml settings here
+      - UPLOAD_TOKEN=${UPLOAD_TOKEN:-}
+      - SESSION_KEY=${SESSION_KEY:-}
+    restart: unless-stopped

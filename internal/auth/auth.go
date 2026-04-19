@@ -114,7 +114,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.isUserAllowed(user.Email) {
+	if !a.IsUserAllowed(user.Email) {
 		http.Error(w, "Forbidden: User "+user.Email+" is not in the allowed list", http.StatusForbidden)
 		return
 	}
@@ -133,7 +133,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, nextURL, http.StatusFound)
 }
 
-func (a *Authenticator) isUserAllowed(email string) bool {
+func (a *Authenticator) IsUserAllowed(email string) bool {
 	for _, pattern := range a.allowedUsers {
 		if pattern == "*" {
 			return true

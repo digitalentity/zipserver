@@ -109,3 +109,15 @@ func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (Zip
 	s, _ := f.Stat()
 	return &localFile{File: f, size: s.Size()}, nil
 }
+
+func (c *CachingStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	err := c.base.UploadZip(ctx, book, version, r)
+	if err != nil {
+		return err
+	}
+
+	// Invalidate cache on upload
+	cachePath := filepath.Join(c.cacheDir, book, version+".zip")
+	_ = os.Remove(cachePath)
+	return nil
+}

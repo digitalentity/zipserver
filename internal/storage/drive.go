@@ -17,8 +17,15 @@ type DriveStorage struct {
 	folderID string
 }
 
-func NewDriveStorage(ctx context.Context, folderID string) (*DriveStorage, error) {
-	srv, err := drive.NewService(ctx, option.WithScopes(drive.DriveReadonlyScope))
+func NewDriveStorage(ctx context.Context, folderID string, credentialsFile string) (*DriveStorage, error) {
+	opts := []option.ClientOption{
+		option.WithScopes(drive.DriveScope),
+	}
+	if credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(credentialsFile))
+	}
+
+	srv, err := drive.NewService(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,4 +134,32 @@ func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 		fileID:  f.Id,
 		size:    f.Size,
 	}, nil
+}
+
+func (d *DriveStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	bookID, err := d.findFolder(ctx, book)
+	if err != nil {
+		// Create folder if not found
+		f := &drive.File{
+			Name:     book,
+			MimeType: "application/vnd.google-apps.folder",
+			Parents:  []string{d.folderID},
+		}
+		res, err := d.service.Files.Create(f).Context(ctx).Do()
+		if err != nil {
+			return err
+		}
+		bookID = res.Id
+	}
+
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+
+	f := &drive.File{
+		Name:    version,
+		Parents: []string{bookID},
+	}
+	_, err = d.service.Files.Create(f).Media(r).Context(ctx).Do()
+	return err
 }

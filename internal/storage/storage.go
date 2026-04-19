@@ -31,4 +31,5 @@ type Storage interface {
 	ListBooks(ctx context.Context) ([]BookInfo, error)
 	ListVersions(ctx context.Context, book string) ([]VersionInfo, error)
 	OpenZip(ctx context.Context, book, version string) (ZipFileContent, error)
+	UploadZip(ctx context.Context, book, version string, r io.Reader) error
 }

@@ -1,6 +1,9 @@
-.PHONY: build test run clean
+.PHONY: build test run clean docker-build docker-push docker-release
 
 BINARY_NAME=zipserver
+DOCKER_USER ?= $(USER)
+IMAGE_NAME = zipserver
+VERSION ?= latest
 
 build:
 	go build -o $(BINARY_NAME) ./cmd/zipserver
@@ -14,3 +17,11 @@ run: build
 clean:
 	rm -f $(BINARY_NAME)
 	go clean
+
+docker-build:
+	docker build -t $(DOCKER_USER)/$(IMAGE_NAME):$(VERSION) .
+
+docker-push:
+	docker push $(DOCKER_USER)/$(IMAGE_NAME):$(VERSION)
+
+docker-release: docker-build docker-push

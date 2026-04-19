@@ -79,6 +79,30 @@ func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	s.serveFromZip(w, r, book, version, innerPath)
 }
 
+func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	book := r.URL.Query().Get("book")
+	version := r.URL.Query().Get("version")
+
+	if book == "" || version == "" {
+		http.Error(w, "Missing book or version parameter", http.StatusBadRequest)
+		return
+	}
+
+	defer r.Body.Close()
+	if err := s.storage.UploadZip(r.Context(), book, version, r.Body); err != nil {
+		http.Error(w, "Upload failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Upload successful"))
+}
+
 func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
 	books, err := s.storage.ListBooks(r.Context())
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 type GCSStorage struct {
@@ -14,8 +15,13 @@ type GCSStorage struct {
 	bucket string
 }
 
-func NewGCSStorage(ctx context.Context, bucket string) (*GCSStorage, error) {
-	client, err := storage.NewClient(ctx)
+func NewGCSStorage(ctx context.Context, bucket string, credentialsFile string) (*GCSStorage, error) {
+	var opts []option.ClientOption
+	if credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(credentialsFile))
+	}
+
+	client, err := storage.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -109,4 +115,17 @@ func (g *GCSStorage) OpenZip(ctx context.Context, book, version string) (ZipFile
 		name: name,
 		size: attrs.Size,
 	}, nil
+}
+
+func (g *GCSStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+	name := book + "/" + version
+	w := g.client.Bucket(g.bucket).Object(name).NewWriter(ctx)
+	if _, err := io.Copy(w, r); err != nil {
+		w.Close()
+		return err
+	}
+	return w.Close()
 }

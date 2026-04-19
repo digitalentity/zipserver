@@ -4,10 +4,12 @@ zip_dir: "./publish"   # for "local"
 cache_dir: "./cache"   # for cloud caching
 
 gcs:
-  bucket: "my-zips-bucket" # for "gcs"
+  bucket: "my-zips-bucket"
+  credentials_file: "path/to/gcs-service-account.json"
 
 drive:
-  folder_id: "1abc2def3ghi..." # for "drive"
+  folder_id: "1abc2def3ghi..."
+  credentials_file: "path/to/drive-service-account.json"
 
 auth:
   enabled: true
@@ -18,3 +20,4 @@ auth:
     - "*@company.com"
     - "user@thirdparty.com"
   session_key: "super-secret-session-key"
+  upload_token: "your-secret-upload-token" # for Bearer authentication

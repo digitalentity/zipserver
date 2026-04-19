@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,4 +79,24 @@ func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 	}
 
 	return &localFile{File: f, size: info.Size()}, nil
+}
+
+func (l *LocalStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+	bookDir := filepath.Join(l.dir, book)
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(bookDir, version)
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, r)
+	return err
 }

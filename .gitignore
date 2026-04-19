@@ -11,6 +11,8 @@ config.yaml
 .env
 
 # Data and Cache
+.cache/
+.publish/
 cache/
 publish/
 

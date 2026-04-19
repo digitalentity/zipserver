@@ -1,6 +1,6 @@
 # Zipserver
 
-Zipserver is a high-performance Go application designed to serve static content (like `mdbook` builds) directly from zip archives. It features a hierarchical organization where **Books** represent projects and **Versions** represent specific builds (e.g., git commits or tags).
+Zipserver is a simple Go application designed to serve static content (like `mdbook` builds) directly from zip archives. It features a hierarchical organization where **Books** represent projects and **Versions** represent specific builds (e.g., git commits or tags).
 
 ## Key Features
 

@@ -6,6 +6,7 @@ import (
 	"embed"
 	"html/template"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -121,6 +122,7 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 	if err := s.storage.UploadZip(r.Context(), book, version, r.Body); err != nil {
+		slog.Error("upload failed", "error", err, "book", book, "version", version)
 		http.Error(w, "Upload failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -132,6 +134,7 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
 	books, err := s.storage.ListBooks(r.Context())
 	if err != nil {
+		slog.Error("unable to list books", "error", err)
 		http.Error(w, "Unable to list books: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -141,6 +144,7 @@ func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err := s.bookTmpl.Execute(w, books); err != nil {
+		slog.Error("book template execution error", "error", err)
 		http.Error(w, "Template execution error", http.StatusInternalServerError)
 	}
 }
@@ -148,6 +152,7 @@ func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book string) {
 	versionsInfo, err := s.storage.ListVersions(r.Context(), book)
 	if err != nil {
+		slog.Error("unable to list versions", "error", err, "book", book)
 		http.NotFound(w, r)
 		return
 	}
@@ -171,6 +176,7 @@ func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book 
 	}
 
 	if err := s.versionTmpl.Execute(w, data); err != nil {
+		slog.Error("version template execution error", "error", err, "book", book)
 		http.Error(w, "Template execution error", http.StatusInternalServerError)
 	}
 }
@@ -185,6 +191,7 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 
 	reader, err := zip.NewReader(content, content.Size())
 	if err != nil {
+		slog.Error("unable to read zip", "error", err, "book", book, "version", version)
 		http.Error(w, "Unable to read zip", http.StatusInternalServerError)
 		return
 	}
@@ -225,6 +232,7 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 
 	rc, err := targetFile.Open()
 	if err != nil {
+		slog.Error("error opening file in zip", "error", err, "book", book, "version", version, "innerPath", innerPath)
 		http.Error(w, "Error opening file in zip", http.StatusInternalServerError)
 		return
 	}

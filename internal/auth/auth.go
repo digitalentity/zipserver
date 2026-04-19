@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -95,12 +96,14 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	token, err := a.config.Exchange(context.Background(), r.FormValue("code"))
 	if err != nil {
+		slog.Error("oauth exchange failed", "error", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
 	if err != nil {
+		slog.Error("failed to get user info", "error", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -110,11 +113,13 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		slog.Error("failed to decode user info", "error", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	if !a.IsUserAllowed(user.Email) {
+		slog.Warn("forbidden: user not in allowed list", "email", user.Email)
 		http.Error(w, "Forbidden: User "+user.Email+" is not in the allowed list", http.StatusForbidden)
 		return
 	}
@@ -122,6 +127,8 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	session, _ := a.store.Get(r, "docserver-session")
 	session.Values["authenticated"] = true
 	session.Values["email"] = user.Email
+
+	slog.Info("user authenticated", "email", user.Email)
 
 	nextURL := "/"
 	if val, ok := session.Values["next"].(string); ok && val != "" {

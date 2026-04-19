@@ -1,7 +1,7 @@
 .PHONY: build test run clean docker-build docker-push docker-release
 
 BINARY_NAME=zipserver
-DOCKER_USER ?= $(USER)
+DOCKER_USER ?= kvsh
 IMAGE_NAME = zipserver
 VERSION ?= latest
 

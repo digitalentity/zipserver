@@ -1,5 +1,7 @@
 # Zipserver
 
+[![Docker Image](https://img.shields.io/docker/pulls/kvsh/zipserver.svg)](https://hub.docker.com/r/kvsh/zipserver)
+
 Zipserver is a simple Go application designed to serve static content (like `mdbook` builds) directly from zip archives. It features a hierarchical organization where **Books** represent projects and **Versions** represent specific builds (e.g., git commits or tags).
 
 ## Key Features
@@ -103,6 +105,13 @@ make build
 ```
 
 ### Docker
+
+#### Official Image
+The official image is available on Docker Hub: [kvsh/zipserver](https://hub.docker.com/r/kvsh/zipserver)
+
+```bash
+docker pull kvsh/zipserver:latest
+```
 
 #### Local Build and Run
 ```bash

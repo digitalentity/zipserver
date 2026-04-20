@@ -117,6 +117,14 @@ func (g *GCSStorage) OpenZip(ctx context.Context, book, version string) (ZipFile
 	}, nil
 }
 
+func (g *GCSStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+	name := book + "/" + version
+	return g.client.Bucket(g.bucket).Object(name).NewReader(ctx)
+}
+
 func (g *GCSStorage) Close() error { return g.client.Close() }
 
 func (g *GCSStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {

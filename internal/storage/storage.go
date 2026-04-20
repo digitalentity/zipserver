@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var validName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+var validName = regexp.MustCompile(`^[a-zA-Z0-9._\-:+~]+$`)
 
 func validateName(s string) error {
 	if !validName.MatchString(s) || strings.Contains(s, "..") {
@@ -43,6 +43,7 @@ type Storage interface {
 	ListBooks(ctx context.Context) ([]BookInfo, error)
 	ListVersions(ctx context.Context, book string) ([]VersionInfo, error)
 	OpenZip(ctx context.Context, book, version string) (ZipFileContent, error)
+	OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error)
 	UploadZip(ctx context.Context, book, version string, r io.Reader) error
 	Close() error
 }

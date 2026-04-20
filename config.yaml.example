@@ -23,6 +23,7 @@ auth:
     - "*@company.com"
     - "user@thirdparty.com"
   session_key: "super-secret-session-key"
+  # cookie_secure: false # Set to false if running behind an HTTP reverse proxy that terminates TLS
 
 upload:
   enabled: true

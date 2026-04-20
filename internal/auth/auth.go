@@ -16,10 +16,13 @@ import (
 	"zipserver/internal/config"
 )
 
+const sessionName = "zipserver-session-v2"
+
 type Authenticator struct {
-	config      *oauth2.Config
-	store       *sessions.CookieStore
+	config       *oauth2.Config
+	store        *sessions.CookieStore
 	allowedUsers []string
+	secure       bool
 }
 
 func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
@@ -31,11 +34,19 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 		return nil, fmt.Errorf("auth.session_key is required when auth is enabled")
 	}
 
+	// Default to secure if redirect_url is https
+	secure := strings.HasPrefix(cfg.RedirectURL, "https://")
+	if cfg.CookieSecure != nil {
+		secure = *cfg.CookieSecure
+	}
+
 	store := sessions.NewCookieStore([]byte(cfg.SessionKey))
 	store.Options = &sessions.Options{
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+		MaxAge:   86400 * 30, // 30 days
 	}
 	oauthConfig := &oauth2.Config{
 		ClientID:     cfg.ClientID,
@@ -45,20 +56,42 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 		Endpoint:     google.Endpoint,
 	}
 
+	slog.Info("authenticator initialized", "secure_cookies", secure, "redirect_url", cfg.RedirectURL)
+
 	return &Authenticator{
-		config:      oauthConfig,
-		store:       store,
+		config:       oauthConfig,
+		store:        store,
 		allowedUsers: cfg.AllowedUsers,
+		secure:       secure,
 	}, nil
+}
+
+// isSecure returns true if the cookie should be marked as Secure.
+func (a *Authenticator) isSecure(r *http.Request) bool {
+	if !a.secure {
+		return false
+	}
+	if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
+		return true
+	}
+	return a.secure
 }
 
 func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session, _ := a.store.Get(r, "docserver-session")
+		session, err := a.store.Get(r, sessionName)
+		if err != nil {
+			slog.Warn("failed to get session in middleware", "error", err)
+		}
+
 		if auth, ok := session.Values["authenticated"].(bool); !ok || !auth {
-			// Save the target URL to redirect back after login
-			session.Values["next"] = r.URL.String()
-			session.Save(r, w)
+			// Save the target URL path and query to redirect back after login
+			session.Values["next"] = r.RequestURI
+			
+			session.Options.Secure = a.isSecure(r)
+			if err := session.Save(r, w); err != nil {
+				slog.Error("failed to save session in middleware", "error", err)
+			}
 			http.Redirect(w, r, "/_/login", http.StatusFound)
 			return
 		}
@@ -68,7 +101,7 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 }
 
 func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	state, err := a.generateState(w)
+	state, err := a.generateState(w, r)
 	if err != nil {
 		slog.Error("failed to generate oauth state", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -78,7 +111,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
-func (a *Authenticator) generateState(w http.ResponseWriter) (string, error) {
+func (a *Authenticator) generateState(w http.ResponseWriter, r *http.Request) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -89,8 +122,9 @@ func (a *Authenticator) generateState(w http.ResponseWriter) (string, error) {
 		Value:    state,
 		MaxAge:   300,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   a.isSecure(r),
 		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
 	}
 	http.SetCookie(w, cookie)
 	return state, nil
@@ -99,6 +133,7 @@ func (a *Authenticator) generateState(w http.ResponseWriter) (string, error) {
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oauthState, _ := r.Cookie("oauthstate")
 	if oauthState == nil || r.FormValue("state") != oauthState.Value {
+		slog.Warn("oauth state mismatch or missing cookie")
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -134,19 +169,29 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, _ := a.store.Get(r, "docserver-session")
+	session, err := a.store.Get(r, sessionName)
+	if err != nil {
+		slog.Warn("failed to get session in callback", "error", err)
+	}
 	session.Values["authenticated"] = true
 	session.Values["email"] = user.Email
 
 	slog.Info("user authenticated", "email", user.Email)
 
 	nextURL := "/"
-	if val, ok := session.Values["next"].(string); ok && strings.HasPrefix(val, "/") && !strings.HasPrefix(val, "//") {
+	if val, ok := session.Values["next"].(string); ok && val != "" {
 		nextURL = val
 		delete(session.Values, "next")
 	}
 
-	session.Save(r, w)
+	session.Options.Secure = a.isSecure(r)
+	if err := session.Save(r, w); err != nil {
+		slog.Error("failed to save session in callback", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	
+	slog.Info("redirecting after login", "url", nextURL)
 	http.Redirect(w, r, nextURL, http.StatusFound)
 }
 

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"io"
 	"log/slog"
@@ -83,12 +84,12 @@ func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	version := parts[1]
 	if version == "latest" {
-		var err error
-		version, err = s.getLatestVersion(r.Context(), book)
-		if err != nil || version == "" {
+		resolved, err := s.getLatestVersion(r.Context(), book)
+		if err != nil || resolved == "" {
 			http.NotFound(w, r)
 			return
 		}
+		version = resolved
 	}
 
 	innerPath := ""
@@ -204,6 +205,8 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 		return
 	}
 
+	slog.Info("searching for file in zip", "book", book, "version", version, "innerPath", innerPath)
+
 	var targetFile *zip.File
 	for _, f := range reader.File {
 		if f.Name == innerPath {
@@ -227,7 +230,23 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 	}
 
 	if targetFile == nil {
+		var names []string
+		for i, f := range reader.File {
+			if i > 10 {
+				names = append(names, "...")
+				break
+			}
+			names = append(names, f.Name)
+		}
+		slog.Warn("file not found in zip", "book", book, "version", version, "innerPath", innerPath, "zip_contents_sample", names)
 		http.NotFound(w, r)
+		return
+	}
+
+	const maxUncompressedSize = 256 << 20 // 256 MB
+	if targetFile.UncompressedSize64 > maxUncompressedSize {
+		slog.Error("file too large in zip", "size", targetFile.UncompressedSize64, "limit", maxUncompressedSize, "book", book, "version", version, "path", innerPath)
+		http.Error(w, "File too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -237,6 +256,28 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 		contentType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", targetFile.UncompressedSize64))
+
+	lastModified := targetFile.Modified.UTC()
+	etag := fmt.Sprintf("\"%x-%x\"", targetFile.CRC32, targetFile.UncompressedSize64)
+
+	w.Header().Set("Last-Modified", lastModified.Format(http.TimeFormat))
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // ZIP versions are immutable
+
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	if ifModSince := r.Header.Get("If-Modified-Since"); ifModSince != "" {
+		if t, err := http.ParseTime(ifModSince); err == nil {
+			if !lastModified.After(t) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+	}
 
 	rc, err := targetFile.Open()
 	if err != nil {

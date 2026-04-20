@@ -95,6 +95,20 @@ func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 	return &localFile{File: f, size: info.Size()}, nil
 }
 
+func (l *LocalStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
+	if err := validateName(book); err != nil {
+		return nil, err
+	}
+	if err := validateName(version); err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+	path := filepath.Join(l.dir, book, version)
+	return os.Open(path)
+}
+
 func (l *LocalStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
 	if err := validateName(book); err != nil {
 		return err

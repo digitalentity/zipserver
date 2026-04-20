@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,11 +99,15 @@ func copyVersions(src []VersionInfo) []VersionInfo {
 }
 
 func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
-	cachePath := filepath.Join(c.cacheDir, book, version+".zip")
+	v := version
+	if !strings.HasSuffix(v, ".zip") {
+		v += ".zip"
+	}
+	cachePath := filepath.Join(c.cacheDir, book, v)
 
 	// Deduplicate concurrent downloads of the same (book, version). Different
 	// pairs proceed in parallel; duplicates share a single download.
-	_, err, _ := c.sf.Do(book+"/"+version, func() (any, error) {
+	_, err, _ := c.sf.Do(book+"/"+v, func() (any, error) {
 		return nil, c.ensureCached(ctx, book, version, cachePath)
 	})
 	if err != nil {
@@ -122,6 +127,23 @@ func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (Zip
 	return &localFile{File: f, size: s.Size()}, nil
 }
 
+func (c *CachingStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
+	v := version
+	if !strings.HasSuffix(v, ".zip") {
+		v += ".zip"
+	}
+	cachePath := filepath.Join(c.cacheDir, book, v)
+
+	_, err, _ := c.sf.Do(book+"/"+v, func() (any, error) {
+		return nil, c.ensureCached(ctx, book, version, cachePath)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return os.Open(cachePath)
+}
+
 // ensureCached downloads (book, version) to cachePath if the local copy is
 // absent or stale. It is always called from within a singleflight.Do, so at
 // most one goroutine runs it for any given (book, version) at a time.
@@ -133,9 +155,10 @@ func (c *CachingStorage) ensureCached(ctx context.Context, book, version, cacheP
 		return err
 	}
 
+	vName := strings.TrimSuffix(version, ".zip")
 	var remoteInfo *VersionInfo
 	for i := range versions {
-		if versions[i].Name == version {
+		if versions[i].Name == vName {
 			remoteInfo = &versions[i]
 			break
 		}
@@ -154,11 +177,11 @@ func (c *CachingStorage) ensureCached(ctx context.Context, book, version, cacheP
 		return err
 	}
 
-	remoteContent, err := c.base.OpenZip(ctx, book, version)
+	remoteStream, err := c.base.OpenZipStream(ctx, book, version)
 	if err != nil {
 		return err
 	}
-	defer remoteContent.Close()
+	defer remoteStream.Close()
 
 	tmpFile, err := os.CreateTemp(c.cacheDir, "download-*")
 	if err != nil {
@@ -172,7 +195,7 @@ func (c *CachingStorage) ensureCached(ctx context.Context, book, version, cacheP
 		}
 	}()
 
-	if _, err := io.Copy(tmpFile, io.NewSectionReader(remoteContent, 0, remoteContent.Size())); err != nil {
+	if _, err := io.Copy(tmpFile, remoteStream); err != nil {
 		tmpFile.Close()
 		return err
 	}
@@ -195,7 +218,11 @@ func (c *CachingStorage) UploadZip(ctx context.Context, book, version string, r 
 	}
 
 	// Invalidate cache on upload
-	cachePath := filepath.Join(c.cacheDir, book, version+".zip")
+	v := version
+	if !strings.HasSuffix(v, ".zip") {
+		v += ".zip"
+	}
+	cachePath := filepath.Join(c.cacheDir, book, v)
 	_ = os.Remove(cachePath)
 
 	c.cacheMu.Lock()

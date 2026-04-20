@@ -13,6 +13,7 @@ type AuthConfig struct {
 	RedirectURL  string   `yaml:"redirect_url"`
 	AllowedUsers []string `yaml:"allowed_users"`
 	SessionKey   string   `yaml:"session_key"`
+	CookieSecure *bool    `yaml:"cookie_secure"`
 }
 
 type UploadConfig struct {
@@ -72,6 +73,34 @@ func Load(path string) (*Config, error) {
 		cfg.Cache.TTL = "1m"
 	}
 
+	if os.Getenv("PORT") != "" {
+		cfg.Port = os.Getenv("PORT")
+	}
+	if os.Getenv("STORAGE_TYPE") != "" {
+		cfg.StorageType = os.Getenv("STORAGE_TYPE")
+	}
+	if os.Getenv("ZIP_DIR") != "" {
+		cfg.ZipDir = os.Getenv("ZIP_DIR")
+	}
+	if os.Getenv("CACHE_DIR") != "" {
+		cfg.Cache.Dir = os.Getenv("CACHE_DIR")
+	}
+	if os.Getenv("GCS_BUCKET") != "" {
+		cfg.GCS.Bucket = os.Getenv("GCS_BUCKET")
+	}
+	if os.Getenv("DRIVE_FOLDER_ID") != "" {
+		cfg.Drive.FolderID = os.Getenv("DRIVE_FOLDER_ID")
+	}
+	if os.Getenv("AUTH_ENABLED") != "" {
+		cfg.Auth.Enabled = os.Getenv("AUTH_ENABLED") == "true"
+	}
+	if os.Getenv("SESSION_KEY") != "" {
+		cfg.Auth.SessionKey = os.Getenv("SESSION_KEY")
+	}
+	if os.Getenv("COOKIE_SECURE") != "" {
+		val := os.Getenv("COOKIE_SECURE") == "true"
+		cfg.Auth.CookieSecure = &val
+	}
 	if os.Getenv("UPLOAD_TOKEN") != "" {
 		cfg.Upload.Token = os.Getenv("UPLOAD_TOKEN")
 	}

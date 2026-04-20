@@ -151,6 +151,32 @@ func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 	}, nil
 }
 
+func (d *DriveStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
+	if err := validateName(version); err != nil {
+		return nil, err
+	}
+	bookID, err := d.findFolder(ctx, book)
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.HasSuffix(version, ".zip") {
+		version += ".zip"
+	}
+
+	query := fmt.Sprintf("'%s' in parents and name = '%s' and trashed = false", bookID, version)
+	res, err := d.service.Files.List().Q(query).Fields("files(id)").Context(ctx).Do()
+	if err != nil || len(res.Files) == 0 {
+		return nil, fmt.Errorf("version not found: %s/%s", book, version)
+	}
+
+	resp, err := d.service.Files.Get(res.Files[0].Id).Context(ctx).Download()
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
 func (d *DriveStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
 	if err := validateName(version); err != nil {
 		return err

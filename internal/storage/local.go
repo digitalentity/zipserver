@@ -16,6 +16,8 @@ func NewLocalStorage(dir string) *LocalStorage {
 	return &LocalStorage{dir: dir}
 }
 
+func (l *LocalStorage) Close() error { return nil }
+
 func (l *LocalStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 	files, err := os.ReadDir(l.dir)
 	if err != nil {
@@ -32,6 +34,9 @@ func (l *LocalStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 }
 
 func (l *LocalStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
+	if err := validateName(book); err != nil {
+		return nil, err
+	}
 	bookDir := filepath.Join(l.dir, book)
 	files, err := os.ReadDir(bookDir)
 	if err != nil {
@@ -41,7 +46,10 @@ func (l *LocalStorage) ListVersions(ctx context.Context, book string) ([]Version
 	var versions []VersionInfo
 	for _, f := range files {
 		if !f.IsDir() && strings.HasSuffix(f.Name(), ".zip") {
-			info, _ := f.Info()
+			info, err := f.Info()
+			if err != nil {
+				return nil, err
+			}
 			versions = append(versions, VersionInfo{
 				Name: strings.TrimSuffix(f.Name(), ".zip"),
 				Time: info.ModTime(),
@@ -63,6 +71,12 @@ func (lf *localFile) Size() int64 {
 }
 
 func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
+	if err := validateName(book); err != nil {
+		return nil, err
+	}
+	if err := validateName(version); err != nil {
+		return nil, err
+	}
 	if !strings.HasSuffix(version, ".zip") {
 		version += ".zip"
 	}
@@ -82,6 +96,12 @@ func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 }
 
 func (l *LocalStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	if err := validateName(book); err != nil {
+		return err
+	}
+	if err := validateName(version); err != nil {
+		return err
+	}
 	if !strings.HasSuffix(version, ".zip") {
 		version += ".zip"
 	}

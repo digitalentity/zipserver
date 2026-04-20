@@ -117,6 +117,8 @@ func (g *GCSStorage) OpenZip(ctx context.Context, book, version string) (ZipFile
 	}, nil
 }
 
+func (g *GCSStorage) Close() error { return g.client.Close() }
+
 func (g *GCSStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
 	if !strings.HasSuffix(version, ".zip") {
 		version += ".zip"

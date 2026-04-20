@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +14,8 @@ import (
 	"google.golang.org/api/option"
 )
 
+var errFolderNotFound = errors.New("folder not found")
+
 type DriveStorage struct {
 	service  *drive.Service
 	folderID string
@@ -19,7 +23,7 @@ type DriveStorage struct {
 
 func NewDriveStorage(ctx context.Context, folderID string, credentialsFile string) (*DriveStorage, error) {
 	opts := []option.ClientOption{
-		option.WithScopes(drive.DriveScope),
+		option.WithScopes(drive.DriveFileScope),
 	}
 	if credentialsFile != "" {
 		opts = append(opts, option.WithCredentialsFile(credentialsFile))
@@ -50,13 +54,19 @@ func (d *DriveStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 }
 
 func (d *DriveStorage) findFolder(ctx context.Context, name string) (string, error) {
+	if err := validateName(name); err != nil {
+		return "", err
+	}
 	query := fmt.Sprintf("'%s' in parents and name = '%s' and mimeType = 'application/vnd.google-apps.folder' and trashed = false", d.folderID, name)
 	res, err := d.service.Files.List().Q(query).Fields("files(id)").Context(ctx).Do()
 	if err != nil {
 		return "", err
 	}
 	if len(res.Files) == 0 {
-		return "", fmt.Errorf("folder not found: %s", name)
+		return "", fmt.Errorf("%w: %s", errFolderNotFound, name)
+	}
+	if len(res.Files) > 1 {
+		slog.Warn("multiple Drive folders match name; using first", "name", name, "count", len(res.Files))
 	}
 	return res.Files[0].Id, nil
 }
@@ -108,10 +118,15 @@ func (df *driveFile) ReadAt(p []byte, off int64) (n int, err error) {
 	return io.ReadFull(resp.Body, p)
 }
 
-func (df *driveFile) Size() int64 { return df.size }
+func (df *driveFile) Size() int64  { return df.size }
 func (df *driveFile) Close() error { return nil }
 
+func (d *DriveStorage) Close() error { return nil }
+
 func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
+	if err := validateName(version); err != nil {
+		return nil, err
+	}
 	bookID, err := d.findFolder(ctx, book)
 	if err != nil {
 		return nil, err
@@ -137,9 +152,14 @@ func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 }
 
 func (d *DriveStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	if err := validateName(version); err != nil {
+		return err
+	}
 	bookID, err := d.findFolder(ctx, book)
 	if err != nil {
-		// Create folder if not found
+		if !errors.Is(err, errFolderNotFound) {
+			return err
+		}
 		f := &drive.File{
 			Name:     book,
 			MimeType: "application/vnd.google-apps.folder",

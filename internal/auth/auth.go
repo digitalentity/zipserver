@@ -32,6 +32,11 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 	}
 
 	store := sessions.NewCookieStore([]byte(cfg.SessionKey))
+	store.Options = &sessions.Options{
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	}
 	oauthConfig := &oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
@@ -49,11 +54,6 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 
 func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/_/login" || r.URL.Path == "/_/callback" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
 		session, _ := a.store.Get(r, "docserver-session")
 		if auth, ok := session.Values["authenticated"].(bool); !ok || !auth {
 			// Save the target URL to redirect back after login
@@ -68,23 +68,32 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 }
 
 func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	state := a.generateState(w)
+	state, err := a.generateState(w)
+	if err != nil {
+		slog.Error("failed to generate oauth state", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 	url := a.config.AuthCodeURL(state)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
-func (a *Authenticator) generateState(w http.ResponseWriter) string {
+func (a *Authenticator) generateState(w http.ResponseWriter) (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
 	state := base64.URLEncoding.EncodeToString(b)
 	cookie := &http.Cookie{
 		Name:     "oauthstate",
 		Value:    state,
 		MaxAge:   300,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
-	return state
+	return state, nil
 }
 
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +110,8 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
+	client := a.config.Client(r.Context(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
 		slog.Error("failed to get user info", "error", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
@@ -131,7 +141,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user authenticated", "email", user.Email)
 
 	nextURL := "/"
-	if val, ok := session.Values["next"].(string); ok && val != "" {
+	if val, ok := session.Values["next"].(string); ok && strings.HasPrefix(val, "/") && !strings.HasPrefix(val, "//") {
 		nextURL = val
 		delete(session.Values, "next")
 	}

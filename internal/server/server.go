@@ -2,6 +2,7 @@ package server
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"embed"
 	"html/template"
@@ -35,6 +36,17 @@ type Server struct {
 	storage     storage.Storage
 	bookTmpl    *template.Template
 	versionTmpl *template.Template
+}
+
+func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data any) {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		slog.Error("template execution error", "template", tmpl.Name(), "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
 }
 
 func NewServer(cfg *config.Config, s storage.Storage) (*Server, error) {
@@ -128,7 +140,9 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("Upload successful"))
+	if _, err := w.Write([]byte("Upload successful")); err != nil {
+		slog.Error("failed to write upload response", "error", err)
+	}
 }
 
 func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
@@ -143,10 +157,7 @@ func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {
 		return books[i].Name < books[j].Name
 	})
 
-	if err := s.bookTmpl.Execute(w, books); err != nil {
-		slog.Error("book template execution error", "error", err)
-		http.Error(w, "Template execution error", http.StatusInternalServerError)
-	}
+	renderTemplate(w, s.bookTmpl, books)
 }
 
 func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book string) {
@@ -175,10 +186,7 @@ func (s *Server) renderVersionList(w http.ResponseWriter, r *http.Request, book 
 		Versions: versions,
 	}
 
-	if err := s.versionTmpl.Execute(w, data); err != nil {
-		slog.Error("version template execution error", "error", err, "book", book)
-		http.Error(w, "Template execution error", http.StatusInternalServerError)
-	}
+	renderTemplate(w, s.versionTmpl, data)
 }
 
 func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, version, innerPath string) {
@@ -238,5 +246,7 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 	}
 	defer rc.Close()
 
-	io.Copy(w, rc)
+	if _, err := io.Copy(w, rc); err != nil {
+		slog.Error("error streaming file from zip", "error", err, "book", book, "version", version, "path", innerPath)
+	}
 }

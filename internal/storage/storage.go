@@ -2,9 +2,21 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"regexp"
+	"strings"
 	"time"
 )
+
+var validName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+func validateName(s string) error {
+	if !validName.MatchString(s) || strings.Contains(s, "..") {
+		return fmt.Errorf("invalid name %q: must match [a-zA-Z0-9._-]+ and must not contain ..", s)
+	}
+	return nil
+}
 
 type BookInfo struct {
 	Name string
@@ -32,4 +44,5 @@ type Storage interface {
 	ListVersions(ctx context.Context, book string) ([]VersionInfo, error)
 	OpenZip(ctx context.Context, book, version string) (ZipFileContent, error)
 	UploadZip(ctx context.Context, book, version string, r io.Reader) error
+	Close() error
 }

@@ -97,13 +97,21 @@ func (c *countStorage) UploadZip(ctx context.Context, book, version string, r io
 	return nil
 }
 
+func (c *countStorage) Close() error { return nil }
+
 func TestCachingStorageTTL(t *testing.T) {
-	tmpDir, _ := os.MkdirTemp("", "cache-test-*")
+	tmpDir, err := os.MkdirTemp("", "cache-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(tmpDir)
 
 	base := &countStorage{}
 	ttl := 100 * time.Millisecond
-	cs, _ := NewCachingStorage(base, tmpDir, ttl)
+	cs, err := NewCachingStorage(base, tmpDir, ttl)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 
 	// 1. Initial fetch

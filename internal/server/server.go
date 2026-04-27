@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -120,8 +121,11 @@ func (s *Server) getLatestVersion(ctx context.Context, book string) (string, err
 }
 
 func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Method not allowed"})
 		return
 	}
 
@@ -129,21 +133,25 @@ func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("version")
 
 	if book == "" || version == "" {
-		http.Error(w, "Missing book or version parameter", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Missing book or version parameter"})
 		return
 	}
 
 	defer r.Body.Close()
 	if err := s.storage.UploadZip(r.Context(), book, version, r.Body); err != nil {
 		slog.Error("upload failed", "error", err, "book", book, "version", version)
-		http.Error(w, "Upload failed: "+err.Error(), http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Upload failed: " + err.Error()})
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if _, err := w.Write([]byte("Upload successful")); err != nil {
-		slog.Error("failed to write upload response", "error", err)
-	}
+	uri := fmt.Sprintf("/%s/%s/", book, version)
+	json.NewEncoder(w).Encode(map[string]string{
+		"uri":     uri,
+		"outcome": "success",
+	})
 }
 
 func (s *Server) renderBookList(w http.ResponseWriter, r *http.Request) {

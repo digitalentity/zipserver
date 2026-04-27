@@ -28,6 +28,13 @@ func (m *mockStorage) OpenZip(ctx context.Context, book, version string) (storag
 	return &mockZipContent{ReaderAt: bytes.NewReader(m.zipData), size: int64(len(m.zipData))}, nil
 }
 
+func (m *mockStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
+	if book == "fail" {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
 type mockZipContent struct {
 	io.ReaderAt
 	size int64
@@ -35,6 +42,69 @@ type mockZipContent struct {
 
 func (m *mockZipContent) Size() int64 { return m.size }
 func (m *mockZipContent) Close() error { return nil }
+
+func TestHandleUpload(t *testing.T) {
+	srv, _ := NewServer(nil, &mockStorage{})
+
+	tests := []struct {
+		name        string
+		method      string
+		query       string
+		wantStatus  int
+		wantBody    string
+	}{
+		{
+			"Success",
+			"POST",
+			"?book=testbook&version=v1",
+			http.StatusCreated,
+			`{"outcome":"success","uri":"/testbook/v1/"}`,
+		},
+		{
+			"Method Not Allowed",
+			"GET",
+			"?book=testbook&version=v1",
+			http.StatusMethodNotAllowed,
+			`{"error":"Method not allowed"}`,
+		},
+		{
+			"Missing Parameters",
+			"POST",
+			"?book=testbook",
+			http.StatusBadRequest,
+			`{"error":"Missing book or version parameter"}`,
+		},
+		{
+			"Upload Failure",
+			"POST",
+			"?book=fail&version=v1",
+			http.StatusInternalServerError,
+			`{"error":"Upload failed: unexpected EOF"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/_/upload"+tt.query, strings.NewReader("zipdata"))
+			rr := httptest.NewRecorder()
+			srv.HandleUpload(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("expected status %d, got %d", tt.wantStatus, rr.Code)
+			}
+
+			gotBody := strings.TrimSpace(rr.Body.String())
+			if gotBody != tt.wantBody {
+				t.Errorf("expected body %q, got %q", tt.wantBody, gotBody)
+			}
+
+			if gotType := rr.Header().Get("Content-Type"); gotType != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %q", gotType)
+			}
+		})
+	}
+}
+
 
 func TestServeFromZipIntegration(t *testing.T) {
 	// Create a real ZIP in memory

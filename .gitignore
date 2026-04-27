@@ -1,5 +1,5 @@
 # Binaries
-zipserver
+/zipserver
 *.exe
 *.exe~
 *.dll

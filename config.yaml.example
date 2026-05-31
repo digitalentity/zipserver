@@ -21,6 +21,7 @@ comments:
   scope: "version" # options: "version" (comments per version), "book" (comments shared across versions)
 
 notifications:
+  enabled: true
   base_url: "http://localhost:8080"
   smtp:
     host: "smtp.example.com"

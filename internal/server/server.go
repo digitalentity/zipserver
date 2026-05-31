@@ -82,7 +82,9 @@ func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a
 	var notificationsCfg config.NotificationsConfig
 	if cfg != nil {
 		notificationsCfg = cfg.Notifications
-		mailer = notifications.NewMailer(notificationsCfg)
+		if notificationsCfg.Enabled {
+			mailer = notifications.NewMailer(notificationsCfg)
+		}
 	}
 
 	return &Server{

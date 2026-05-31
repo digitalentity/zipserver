@@ -36,6 +36,7 @@ type SMTPConfig struct {
 }
 
 type NotificationsConfig struct {
+	Enabled  bool       `yaml:"enabled"`
 	SMTP     SMTPConfig `yaml:"smtp"`
 	BaseURL  string     `yaml:"base_url"`
 	Watchers []string   `yaml:"watchers"`
@@ -121,6 +122,9 @@ func Load(path string) (*Config, error) {
 	}
 	if os.Getenv("BASE_URL") != "" {
 		cfg.Notifications.BaseURL = os.Getenv("BASE_URL")
+	}
+	if os.Getenv("NOTIFICATIONS_ENABLED") != "" {
+		cfg.Notifications.Enabled = os.Getenv("NOTIFICATIONS_ENABLED") == "true"
 	}
 
 	return &cfg, nil

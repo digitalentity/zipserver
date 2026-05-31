@@ -109,6 +109,7 @@ upload:
 func TestLoadNotificationsConfig(t *testing.T) {
 	content := `
 notifications:
+  enabled: true
   base_url: "http://example.com"
   smtp:
     host: "smtp.mail.com"
@@ -135,6 +136,9 @@ notifications:
 		t.Fatal(err)
 	}
 
+	if !cfg.Notifications.Enabled {
+		t.Error("expected notifications.enabled to be true")
+	}
 	if cfg.Notifications.BaseURL != "http://example.com" {
 		t.Errorf("expected base_url http://example.com, got %s", cfg.Notifications.BaseURL)
 	}
@@ -147,7 +151,11 @@ notifications:
 
 	// Test env override
 	os.Setenv("SMTP_PORT", "587")
-	defer os.Unsetenv("SMTP_PORT")
+	os.Setenv("NOTIFICATIONS_ENABLED", "false")
+	defer func() {
+		os.Unsetenv("SMTP_PORT")
+		os.Unsetenv("NOTIFICATIONS_ENABLED")
+	}()
 
 	cfg, err = Load(tmpfile.Name())
 	if err != nil {
@@ -155,5 +163,8 @@ notifications:
 	}
 	if cfg.Notifications.SMTP.Port != 587 {
 		t.Errorf("expected env overridden port 587, got %d", cfg.Notifications.SMTP.Port)
+	}
+	if cfg.Notifications.Enabled {
+		t.Error("expected env overridden notifications.enabled to be false")
 	}
 }

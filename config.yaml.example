@@ -19,3 +19,14 @@ upload:
 comments:
   dir: "./comments"
   scope: "version" # options: "version" (comments per version), "book" (comments shared across versions)
+
+notifications:
+  base_url: "http://localhost:8080"
+  smtp:
+    host: "smtp.example.com"
+    port: 587
+    username: "noreply@example.com"
+    password: "smtp-password"
+    from: "Zipserver <noreply@example.com>"
+  watchers:
+    - "admin@example.com"

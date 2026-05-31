@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"zipserver/internal/comments"
+	"zipserver/internal/notifications"
 )
 
 // getCreatorAndValidate checks session or returns mock creator if auth is disabled.
@@ -160,6 +163,10 @@ func (s *Server) HandleCreateComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.mailer != nil {
+		go s.sendCommentNotification(*created)
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(created)
 }
@@ -263,4 +270,42 @@ func getCommentID(r *http.Request) string {
 		id = strings.TrimPrefix(r.URL.Path, "/_/api/v1/comments/")
 	}
 	return id
+}
+
+func (s *Server) sendCommentNotification(anno comments.Annotation) {
+	pageComments, err := s.comments.GetComments(context.Background(), anno.Book, anno.Version, anno.Page)
+	if err != nil {
+		slog.Error("failed to get page comments for notification", "error", err)
+		return
+	}
+
+	recipients := notifications.GetNotificationRecipients(anno, pageComments, s.notifications.Watchers)
+	if len(recipients) == 0 {
+		return
+	}
+
+	subject := fmt.Sprintf("[Zipserver] New comment on %s (%s)", anno.Book, anno.Version)
+	if anno.Motivation == "replying" {
+		subject = fmt.Sprintf("[Zipserver] New reply on %s (%s)", anno.Book, anno.Version)
+	}
+
+	baseURL := s.notifications.BaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	pageURL := fmt.Sprintf("%s/%s/%s/%s", strings.TrimSuffix(baseURL, "/"), anno.Book, anno.Version, strings.TrimPrefix(anno.Page, "/"))
+
+	var body strings.Builder
+	body.WriteString("<html><body>")
+	body.WriteString(fmt.Sprintf("<p><strong>%s</strong> added a comment to <strong>%s/%s/%s</strong>:</p>", html.EscapeString(anno.Creator.Name), html.EscapeString(anno.Book), html.EscapeString(anno.Version), html.EscapeString(anno.Page)))
+	body.WriteString("<blockquote style=\"border-left: 4px solid #ccc; padding-left: 10px; margin: 10px 0; color: #555;\">")
+	body.WriteString(strings.ReplaceAll(html.EscapeString(anno.Body.Value), "\n", "<br>"))
+	body.WriteString("</blockquote>")
+	body.WriteString(fmt.Sprintf("<p><a href=\"%s\">View Comment Thread</a></p>", pageURL))
+	body.WriteString("</body></html>")
+
+	err = s.mailer.SendEmail(recipients, subject, body.String())
+	if err != nil {
+		slog.Error("failed to send comment email notification", "error", err)
+	}
 }

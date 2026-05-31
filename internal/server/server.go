@@ -20,6 +20,7 @@ import (
 	"zipserver/internal/auth"
 	"zipserver/internal/comments"
 	"zipserver/internal/config"
+	"zipserver/internal/notifications"
 	"zipserver/internal/storage"
 )
 
@@ -47,6 +48,8 @@ type Server struct {
 	comments      comments.CommentStore
 	auth          *auth.Authenticator
 	staticHandler http.Handler
+	notifications config.NotificationsConfig
+	mailer        *notifications.Mailer
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data any) {
@@ -75,6 +78,13 @@ func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a
 		return nil, err
 	}
 
+	var mailer *notifications.Mailer
+	var notificationsCfg config.NotificationsConfig
+	if cfg != nil {
+		notificationsCfg = cfg.Notifications
+		mailer = notifications.NewMailer(notificationsCfg)
+	}
+
 	return &Server{
 		storage:       s,
 		bookTmpl:      bookTmpl,
@@ -82,6 +92,8 @@ func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a
 		comments:      c,
 		auth:          a,
 		staticHandler: http.StripPrefix("/_/static/", http.FileServer(http.FS(subFS))),
+		notifications: notificationsCfg,
+		mailer:        mailer,
 	}, nil
 }
 

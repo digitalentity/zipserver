@@ -105,3 +105,55 @@ upload:
 		t.Errorf("expected upload.token env-token, got %s", cfg.Upload.Token)
 	}
 }
+
+func TestLoadNotificationsConfig(t *testing.T) {
+	content := `
+notifications:
+  base_url: "http://example.com"
+  smtp:
+    host: "smtp.mail.com"
+    port: 25
+    username: "user"
+    password: "pwd"
+    from: "noreply@mail.com"
+  watchers:
+    - "watcher@mail.com"
+`
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	cfg, err := Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Notifications.BaseURL != "http://example.com" {
+		t.Errorf("expected base_url http://example.com, got %s", cfg.Notifications.BaseURL)
+	}
+	if cfg.Notifications.SMTP.Host != "smtp.mail.com" || cfg.Notifications.SMTP.Port != 25 {
+		t.Errorf("unexpected smtp config: %+v", cfg.Notifications.SMTP)
+	}
+	if len(cfg.Notifications.Watchers) != 1 || cfg.Notifications.Watchers[0] != "watcher@mail.com" {
+		t.Errorf("unexpected watchers: %+v", cfg.Notifications.Watchers)
+	}
+
+	// Test env override
+	os.Setenv("SMTP_PORT", "587")
+	defer os.Unsetenv("SMTP_PORT")
+
+	cfg, err = Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Notifications.SMTP.Port != 587 {
+		t.Errorf("expected env overridden port 587, got %d", cfg.Notifications.SMTP.Port)
+	}
+}

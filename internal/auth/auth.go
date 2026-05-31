@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -87,11 +88,15 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 			slog.Warn("failed to get session in middleware", "error", err)
 		}
 
-		if auth, ok := session.Values["authenticated"].(bool); !ok || !auth {
+		auth, ok := session.Values["authenticated"].(bool)
+		userID, _ := session.Values["user_id"].(string)
+		if !ok || !auth || userID == "" {
 			// Save the target URL path and query to redirect back after login
+			session.Values = make(map[any]any)
 			session.Values["next"] = r.RequestURI
 			
 			session.Options.Secure = a.isSecure(r)
+			session.Options.MaxAge = -1 // expire immediately to force re-login
 			if err := session.Save(r, w); err != nil {
 				slog.Error("failed to save session in middleware", "error", err)
 			}
@@ -277,6 +282,20 @@ func (a *Authenticator) GetSessionUser(r *http.Request) (*SessionUser, bool) {
 	id, _ := session.Values["user_id"].(string)
 	name, _ := session.Values["user_name"].(string)
 	avatar, _ := session.Values["avatar_url"].(string)
+	email, _ := session.Values["email"].(string)
+
+	if id == "" && email != "" {
+		id = email
+	}
+	if name == "" && email != "" {
+		parts := strings.Split(email, "@")
+		name = parts[0]
+	}
+	if avatar == "" && email != "" {
+		emailMD5 := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(email))))
+		avatar = fmt.Sprintf("https://www.gravatar.com/avatar/%x?d=mp", emailMD5)
+	}
+
 	return &SessionUser{
 		ID:        id,
 		Name:      name,

@@ -25,6 +25,7 @@ type Creator struct {
 	Type   string `json:"type"` // "Person"
 	Name   string `json:"name"`
 	Avatar string `json:"avatar"`
+	Email  string `json:"email,omitempty"`
 }
 
 type TextualBody struct {

@@ -78,7 +78,7 @@ func TestCommentsAPIHandlers(t *testing.T) {
 		t.Fatalf("failed to unmarshal created comment: %v", err)
 	}
 
-	if created.ID == "" || created.Creator.ID != "usr_dev_123" {
+	if created.ID == "" || created.Creator.ID != "usr_dev_123" || created.Creator.Email != "dev@example.com" {
 		t.Errorf("unexpected created annotation: %+v", created)
 	}
 

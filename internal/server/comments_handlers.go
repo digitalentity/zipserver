@@ -20,6 +20,7 @@ func (s *Server) getCreatorAndValidate(w http.ResponseWriter, r *http.Request) (
 			Type:   "Person",
 			Name:   "Dev User",
 			Avatar: "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y",
+			Email:  "dev@example.com",
 		}, true
 	}
 
@@ -34,6 +35,7 @@ func (s *Server) getCreatorAndValidate(w http.ResponseWriter, r *http.Request) (
 		Type:   "Person",
 		Name:   user.Name,
 		Avatar: user.AvatarURL,
+		Email:  user.Email,
 	}, true
 }
 

@@ -265,6 +265,7 @@ type SessionUser struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatarUrl"`
+	Email     string `json:"email"`
 }
 
 func (a *Authenticator) GetSessionUser(r *http.Request) (*SessionUser, bool) {
@@ -300,6 +301,7 @@ func (a *Authenticator) GetSessionUser(r *http.Request) (*SessionUser, bool) {
 		ID:        id,
 		Name:      name,
 		AvatarURL: avatar,
+		Email:     email,
 	}, true
 }
 

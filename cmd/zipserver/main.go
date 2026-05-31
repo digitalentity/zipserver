@@ -30,44 +30,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	cacheTTL, err := time.ParseDuration(cfg.Cache.TTL)
-	if err != nil {
-		slog.Error("invalid cache.ttl", "error", err, "value", cfg.Cache.TTL)
+	if err := os.MkdirAll(cfg.ZipDir, 0755); err != nil {
+		slog.Error("failed to create zip directory", "path", cfg.ZipDir, "error", err)
 		os.Exit(1)
 	}
-
-	var storageBackend storage.Storage
-	switch cfg.StorageType {
-	case "gcs":
-		gcs, err := storage.NewGCSStorage(context.Background(), cfg.GCS.Bucket, cfg.GCS.CredentialsFile)
-		if err != nil {
-			slog.Error("failed to initialize GCS storage", "error", err, "bucket", cfg.GCS.Bucket)
-			os.Exit(1)
-		}
-		storageBackend, err = storage.NewCachingStorage(gcs, cfg.Cache.Dir, cacheTTL)
-		if err != nil {
-			slog.Error("failed to initialize GCS cache", "error", err, "dir", cfg.Cache.Dir)
-			os.Exit(1)
-		}
-	case "drive":
-		drive, err := storage.NewDriveStorage(context.Background(), cfg.Drive.FolderID, cfg.Drive.CredentialsFile)
-		if err != nil {
-			slog.Error("failed to initialize Google Drive storage", "error", err, "folder_id", cfg.Drive.FolderID)
-			os.Exit(1)
-		}
-		storageBackend, err = storage.NewCachingStorage(drive, cfg.Cache.Dir, cacheTTL)
-		if err != nil {
-			slog.Error("failed to initialize Google Drive cache", "error", err, "dir", cfg.Cache.Dir)
-			os.Exit(1)
-		}
-
-	default: // "local"
-		if err := os.MkdirAll(cfg.ZipDir, 0755); err != nil {
-			slog.Error("failed to create zip directory", "path", cfg.ZipDir, "error", err)
-			os.Exit(1)
-		}
-		storageBackend = storage.NewLocalStorage(cfg.ZipDir)
-	}
+	storageBackend := storage.NewLocalStorage(cfg.ZipDir)
 
 	authenticator, err := auth.NewAuthenticator(&cfg.Auth)
 	if err != nil {

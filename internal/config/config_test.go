@@ -9,9 +9,6 @@ func TestLoad(t *testing.T) {
 	content := `
 port: "9090"
 zip_dir: "./test_zips"
-storage_type: "gcs"
-gcs:
-  bucket: "test-bucket"
 `
 	tmpfile, err := os.CreateTemp("", "config-*.yaml")
 	if err != nil {
@@ -36,19 +33,6 @@ gcs:
 	}
 	if cfg.ZipDir != "./test_zips" {
 		t.Errorf("expected zip_dir ./test_zips, got %s", cfg.ZipDir)
-	}
-	if cfg.StorageType != "gcs" {
-		t.Errorf("expected storage_type gcs, got %s", cfg.StorageType)
-	}
-	if cfg.GCS.Bucket != "test-bucket" {
-		t.Errorf("expected bucket test-bucket, got %s", cfg.GCS.Bucket)
-	}
-	// Test default cache settings
-	if cfg.Cache.Dir != "./cache" {
-		t.Errorf("expected default cache.dir ./cache, got %s", cfg.Cache.Dir)
-	}
-	if cfg.Cache.TTL != "1m" {
-		t.Errorf("expected default cache.ttl 1m, got %s", cfg.Cache.TTL)
 	}
 }
 

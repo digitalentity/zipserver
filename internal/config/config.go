@@ -21,36 +21,17 @@ type UploadConfig struct {
 	Token   string `yaml:"token"`
 }
 
-type GCSConfig struct {
-	Bucket          string `yaml:"bucket"`
-	CredentialsFile string `yaml:"credentials_file"`
-}
-
-type DriveConfig struct {
-	FolderID        string `yaml:"folder_id"`
-	CredentialsFile string `yaml:"credentials_file"`
-}
-
-type CacheConfig struct {
-	Dir string `yaml:"dir"`
-	TTL string `yaml:"ttl"`
-}
-
 type CommentsConfig struct {
 	Dir   string `yaml:"dir"`
 	Scope string `yaml:"scope"`
 }
 
 type Config struct {
-	Port        string         `yaml:"port"`
-	StorageType string         `yaml:"storage_type"` // "local", "gcs", "drive"
-	ZipDir      string         `yaml:"zip_dir"`      // for local
-	Cache       CacheConfig    `yaml:"cache"`        // for cloud caching
-	GCS         GCSConfig      `yaml:"gcs"`
-	Drive       DriveConfig    `yaml:"drive"`
-	Auth        AuthConfig     `yaml:"auth"`
-	Upload      UploadConfig   `yaml:"upload"`
-	Comments    CommentsConfig `yaml:"comments"`
+	Port     string         `yaml:"port"`
+	ZipDir   string         `yaml:"zip_dir"`
+	Auth     AuthConfig     `yaml:"auth"`
+	Upload   UploadConfig   `yaml:"upload"`
+	Comments CommentsConfig `yaml:"comments"`
 }
 
 func Load(path string) (*Config, error) {
@@ -72,12 +53,6 @@ func Load(path string) (*Config, error) {
 	if cfg.ZipDir == "" {
 		cfg.ZipDir = "./publish"
 	}
-	if cfg.Cache.Dir == "" {
-		cfg.Cache.Dir = "./cache"
-	}
-	if cfg.Cache.TTL == "" {
-		cfg.Cache.TTL = "1m"
-	}
 	if cfg.Comments.Dir == "" {
 		cfg.Comments.Dir = "./comments"
 	}
@@ -88,26 +63,14 @@ func Load(path string) (*Config, error) {
 	if os.Getenv("PORT") != "" {
 		cfg.Port = os.Getenv("PORT")
 	}
-	if os.Getenv("STORAGE_TYPE") != "" {
-		cfg.StorageType = os.Getenv("STORAGE_TYPE")
-	}
 	if os.Getenv("ZIP_DIR") != "" {
 		cfg.ZipDir = os.Getenv("ZIP_DIR")
-	}
-	if os.Getenv("CACHE_DIR") != "" {
-		cfg.Cache.Dir = os.Getenv("CACHE_DIR")
 	}
 	if os.Getenv("COMMENTS_DIR") != "" {
 		cfg.Comments.Dir = os.Getenv("COMMENTS_DIR")
 	}
 	if os.Getenv("COMMENTS_SCOPE") != "" {
 		cfg.Comments.Scope = os.Getenv("COMMENTS_SCOPE")
-	}
-	if os.Getenv("GCS_BUCKET") != "" {
-		cfg.GCS.Bucket = os.Getenv("GCS_BUCKET")
-	}
-	if os.Getenv("DRIVE_FOLDER_ID") != "" {
-		cfg.Drive.FolderID = os.Getenv("DRIVE_FOLDER_ID")
 	}
 	if os.Getenv("AUTH_ENABLED") != "" {
 		cfg.Auth.Enabled = os.Getenv("AUTH_ENABLED") == "true"

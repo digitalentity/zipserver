@@ -94,6 +94,7 @@ func main() {
 	mux.HandleFunc("POST /_/api/v1/comments", srv.HandleCreateComment)
 	mux.HandleFunc("PATCH /_/api/v1/comments/{id}", srv.HandleUpdateComment)
 	mux.HandleFunc("DELETE /_/api/v1/comments/{id}", srv.HandleDeleteComment)
+	mux.HandleFunc("GET /_/static/", srv.HandleStatic)
 
 	if authenticator != nil {
 		mux.HandleFunc("/_/login", authenticator.HandleLogin)

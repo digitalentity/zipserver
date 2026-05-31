@@ -1,0 +1,533 @@
+/**
+ * Configures the floating sidebar, popup selection bubble, hover paragraph
+ * indicators, and inline highlight colors integrated with mdbook's active themes.
+ */
+
+/* ==========================================
+ * 1. Page Layout Shift when Sidebar Open
+ * ========================================== */
+html.comments-sidebar-open #mdbook-page-wrapper {
+    margin-right: 380px;
+    transition: margin-right 0.3s ease;
+}
+
+html.comments-sidebar-open .nav-wide-wrapper {
+    right: 395px;
+    transition: right 0.3s ease;
+}
+
+@media only screen and (max-width: 1200px) {
+    html.comments-sidebar-open #mdbook-page-wrapper {
+        margin-right: 0;
+    }
+    html.comments-sidebar-open .nav-wide-wrapper {
+        right: 15px;
+    }
+}
+
+/* ==========================================
+ * 2. Sliding Sidebar Layout
+ * ========================================== */
+.comment-sidebar {
+    position: fixed;
+    top: 50px; /* mdbook header menu-bar height is 50px */
+    right: -380px;
+    bottom: 0;
+    width: 380px;
+    background-color: var(--theme-popup-bg, var(--bg));
+    color: var(--fg);
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+    transition: right 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    font-family: "Open Sans", sans-serif;
+}
+
+html.comments-sidebar-open .comment-sidebar {
+    right: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.sidebar-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--fg);
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    padding: 0;
+    line-height: 1;
+}
+
+.sidebar-close:hover {
+    opacity: 1;
+}
+
+.sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 0;
+}
+
+/* Filter unresolved/resolved comments */
+.sidebar-filter-bar {
+    padding: 8px 20px;
+    background-color: rgba(0, 0, 0, 0.03);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.filter-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* ==========================================
+ * 3. Thread Cards & Comments UI
+ * ========================================== */
+.thread-card {
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 12px 15px;
+    padding: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.thread-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.thread-card.focused-card {
+    border-color: var(--links);
+    box-shadow: 0 0 0 2px rgba(31, 128, 130, 0.25);
+}
+
+.new-thread-card {
+    border-style: dashed;
+    border-color: var(--links);
+    background-color: rgba(31, 128, 130, 0.02);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.card-author-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border);
+}
+
+.author-name {
+    font-weight: 600;
+    color: var(--fg);
+    display: block;
+}
+
+.timestamp {
+    color: var(--fg);
+    opacity: 0.5;
+    font-size: 10px;
+}
+
+.resolve-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--fg);
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.resolve-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-color: var(--fg);
+}
+
+/* Quote Selection Container */
+.selection-quote {
+    font-size: 12px;
+    font-style: italic;
+    border-left: 3px solid var(--links);
+    padding-left: 10px;
+    color: var(--fg);
+    opacity: 0.8;
+    margin: 4px 0;
+}
+
+.paragraph-context {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--links);
+    opacity: 0.8;
+    text-transform: uppercase;
+}
+
+/* Parent Comment Body */
+.comment-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.comment-text {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.comment-delete-btn {
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: #ff5f5f;
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.comment-delete-btn:hover {
+    opacity: 1;
+    transform: scale(1.08);
+}
+
+.comment-delete-btn svg, .comment-delete-btn-reply svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+/* Replies Rendering */
+.replies-container {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.reply-card {
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+}
+
+.reply-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+}
+
+.avatar-reply {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.author-name-reply {
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.timestamp-reply {
+    color: var(--fg);
+    opacity: 0.5;
+    font-size: 9px;
+    margin-left: 4px;
+}
+
+.comment-body-reply {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.comment-text-reply {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.comment-delete-btn-reply {
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: #ff5f5f;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.comment-delete-btn-reply:hover {
+    opacity: 1;
+}
+
+/* Footer Inputs */
+.card-footer {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 4px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.reply-input {
+    flex: 1;
+    min-height: 32px;
+    max-height: 120px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background-color: var(--theme-popup-bg, var(--bg));
+    color: var(--fg);
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.3;
+}
+
+.reply-input:focus {
+    border-color: var(--links);
+    outline: none;
+}
+
+.reply-submit-btn {
+    background-color: var(--links);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.reply-submit-btn:hover {
+    opacity: 0.9;
+}
+
+/* Resolved state look */
+.resolved-card {
+    opacity: 0.6;
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.resolved-card:hover {
+    opacity: 0.9;
+}
+
+.resolved-card .selection-quote {
+    border-left-color: #888888;
+}
+
+
+
+/* Empty Page/Search State */
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    font-size: 13px;
+    opacity: 0.6;
+    line-height: 1.5;
+}
+
+/* ==========================================
+ * 5. In-page Highlights & Controls overlays
+ * ========================================== */
+
+/* Range Highlight style (mark.js wrapped spans) */
+.comment-highlight {
+    background-color: rgba(31, 128, 130, 0.22) !important;
+    border-bottom: 1px dashed var(--links);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.comment-highlight:hover {
+    background-color: rgba(31, 128, 130, 0.38) !important;
+}
+
+.resolved-highlight {
+    background-color: rgba(128, 128, 128, 0.12) !important;
+    border-bottom: 1px dashed rgba(128, 128, 128, 0.5) !important;
+}
+
+.resolved-highlight:hover {
+    background-color: rgba(128, 128, 128, 0.24) !important;
+}
+
+/* Popover add-comment button */
+.comment-popover {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    background-color: var(--links);
+    color: #ffffff;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    z-index: 2000;
+    user-select: none;
+    transition: transform 0.1s;
+}
+
+.comment-popover::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px 6px 0;
+    border-style: solid;
+    border-color: var(--links) transparent;
+    display: block;
+    width: 0;
+}
+
+.comment-popover:hover {
+    transform: translate(-50%, -100%) scale(1.05);
+}
+
+/* Paragraph margins indicator bubble on hover */
+.comment-paragraph-indicator {
+    position: absolute;
+    left: -28px;
+    top: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--links);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+    padding: 4px;
+    line-height: 1;
+    z-index: 5;
+}
+
+/* Show indicator when block is hovered */
+#mdbook-content main > *:hover > .comment-paragraph-indicator,
+#mdbook-content main li:hover > .comment-paragraph-indicator {
+    opacity: 0.35;
+    pointer-events: auto;
+}
+
+/* Hover bridge pseudo-element: prevents pointer from leaving hover area when moving over the margin gap */
+.comment-paragraph-indicator::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -14px;
+    width: 14px;
+    height: 100%;
+    background-color: transparent;
+}
+
+.comment-paragraph-indicator:hover {
+    opacity: 0.95 !important;
+    transform: scale(1.15);
+}
+
+.comment-paragraph-indicator svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+/* Specific alignments for nested block elements */
+li .comment-paragraph-indicator {
+    left: -20px;
+    top: 2px;
+}
+
+li .comment-paragraph-indicator::after {
+    right: -10px;
+    width: 10px;
+}
+
+/* Support theme variables adjustments for Coal/Navy dark modes */
+.coal .reply-submit-btn,
+.navy .reply-submit-btn,
+.ayu .reply-submit-btn {
+    background-color: var(--links);
+    color: #ffffff;
+}
+
+.coal .comment-popover,
+.navy .comment-popover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Section-level Highlight Styles (for block elements like P, H1-H6, blockquote, pre) */
+.comment-section-highlight {
+    background-color: rgba(31, 128, 130, 0.08) !important;
+    border-left: 3px solid var(--links) !important;
+    padding-left: 8px !important;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.comment-section-highlight:hover {
+    background-color: rgba(31, 128, 130, 0.16) !important;
+}
+
+.comment-section-highlight.resolved-highlight {
+    background-color: rgba(128, 128, 128, 0.04) !important;
+    border-left: 3px solid rgba(128, 128, 128, 0.4) !important;
+}
+
+.comment-section-highlight.resolved-highlight:hover {
+    background-color: rgba(128, 128, 128, 0.1) !important;
+}

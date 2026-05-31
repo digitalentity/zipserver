@@ -166,3 +166,50 @@ Save fields in the session:
 2.  **Phase 2**: Define data models and implement `JSONFileCommentStore` for page-level CRUD.
 3.  **Phase 3**: Write tests validating thread replies, cascading deletion, and multi-version parsing.
 4.  **Phase 4**: Wire up routes in `main.go`.
+
+---
+
+## 6. Frontend Comments Engine (`comments.js`)
+
+The client-side commenting engine is built as an IIFE (Immediately Invoked Function Expression) to avoid global namespace pollution, executing automatically upon DOM completion.
+
+### 6.1 Architecture Overview
+
+```mermaid
+graph TD
+    Dom[DOM Ready] --> Boot[Boot Lifecycle]
+    Boot --> Fetch[Fetch Annotations via GET]
+    Boot --> Render[Inject Sidebar UI & Listeners]
+    Boot --> Highlight[Apply Range Highlights]
+    
+    Selection[User Text Selection] --> Popover[Show 'Add Comment' Bubble]
+    Popover -->|Click| NewThread[Open New Thread Editor]
+    
+    Hover[Hover Block Element] --> Indicator[Show Paragraph Indicator]
+    Indicator -->|Click| NewThread
+```
+
+### 6.2 Key Architectural Components
+
+1.  **`CommentsAPI` Client Wrapper**:
+    An asynchronous JavaScript utility class interfacing with Zipserver REST endpoints (`GET`, `POST`, `PATCH`, `DELETE` operations mapped to `/_/api/v1/comments/*`).
+
+2.  **Anchor Selection Engine**:
+    To robustly preserve annotations across content updates, target elements are referenced dynamically:
+    -   **Multi-Stage Fallback Selector**: Looks up block elements using a sequence of matches:
+        1.  Exact index check matching the stored paragraph SHA-256 hash.
+        2.  Global DOM scan matching the SHA-256 hash.
+        3.  Index check matching the tagName.
+        4.  Neighborhood scan (offsets $\pm 5$ blocks) searching for matching tagName.
+        5.  Global DOM scan fallback for tagName.
+    -   **TreeWalker Offsets**: Tracks precise range positions within block nodes utilizing standard `document.createTreeWalker` to sum up character lengths across nested text nodes safely.
+
+3.  **In-Page Highlighting Loader**:
+    -   Integrated with `mark.js` (distributed with mdbook) to handle sub-string range selections.
+    -   Applies distinct styling classes: `.comment-highlight` (default active highlights) and `.resolved-highlight` (unobtrusive gray styling for resolved threads).
+    -   Serves block-level annotations by applying `.comment-section-highlight` directly to structural block containers.
+
+4.  **Dynamic Sliding Sidebar Drawer**:
+    -   Injects a sliding panel (`.comment-sidebar`) that pushes the mdbook wrapper to the left, scaling down for small screens using responsive media queries.
+    -   Implements event propagation isolation (`e.stopPropagation()`) on keypress listeners to prevent active mdbook global keyboard shortcut mappings (like arrow navigation or `?` shortcut panels) while typing inside input areas.
+

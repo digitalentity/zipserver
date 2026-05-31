@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -25,6 +26,9 @@ import (
 //go:embed templates/*.tpl
 var templateFS embed.FS
 
+//go:embed static
+var staticFS embed.FS
+
 type ZipFile struct {
 	Name string
 	Time string
@@ -37,11 +41,12 @@ type VersionPageData struct {
 }
 
 type Server struct {
-	storage     storage.Storage
-	bookTmpl    *template.Template
-	versionTmpl *template.Template
-	comments    comments.CommentStore
-	auth        *auth.Authenticator
+	storage       storage.Storage
+	bookTmpl      *template.Template
+	versionTmpl   *template.Template
+	comments      comments.CommentStore
+	auth          *auth.Authenticator
+	staticHandler http.Handler
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data any) {
@@ -65,13 +70,23 @@ func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a
 		return nil, err
 	}
 
+	subFS, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, err
+	}
+
 	return &Server{
-		storage:     s,
-		bookTmpl:    bookTmpl,
-		versionTmpl: versionTmpl,
-		comments:    c,
-		auth:        a,
+		storage:       s,
+		bookTmpl:      bookTmpl,
+		versionTmpl:   versionTmpl,
+		comments:      c,
+		auth:          a,
+		staticHandler: http.StripPrefix("/_/static/", http.FileServer(http.FS(subFS))),
 	}, nil
+}
+
+func (s *Server) HandleStatic(w http.ResponseWriter, r *http.Request) {
+	s.staticHandler.ServeHTTP(w, r)
 }
 
 func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {

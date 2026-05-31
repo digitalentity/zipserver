@@ -178,3 +178,59 @@ func TestServeFromZipIntegration(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleStatic(t *testing.T) {
+	srv, err := NewServer(nil, &mockStorage{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	tests := []struct {
+		url        string
+		wantStatus int
+		wantType   string
+		wantBody   string
+	}{
+		{
+			"/_/static/js/comments.js",
+			http.StatusOK,
+			"text/javascript",
+			"Custom Comments Integration",
+		},
+		{
+			"/_/static/css/comments.css",
+			http.StatusOK,
+			"text/css",
+			"comments-sidebar-open",
+		},
+		{
+			"/_/static/nonexistent.txt",
+			http.StatusNotFound,
+			"",
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.url, nil)
+			rr := httptest.NewRecorder()
+			srv.HandleStatic(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("expected status %d, got %d", tt.wantStatus, rr.Code)
+			}
+
+			if tt.wantStatus == http.StatusOK {
+				gotType := rr.Header().Get("Content-Type")
+				if !strings.HasPrefix(gotType, tt.wantType) {
+					t.Errorf("expected type prefix %q, got %q", tt.wantType, gotType)
+				}
+				if !strings.Contains(rr.Body.String(), tt.wantBody) {
+					t.Errorf("expected body to contain %q, got %q", tt.wantBody, rr.Body.String())
+				}
+			}
+		})
+	}
+}
+

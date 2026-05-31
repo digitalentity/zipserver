@@ -21,7 +21,7 @@ func TestCommentsAPIHandlers(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	store, err := comments.NewJSONFileCommentStore(tempDir)
+	store, err := comments.NewJSONFileCommentStore(tempDir, "version")
 	if err != nil {
 		t.Fatalf("failed to create comment store: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestCommentsAPIAuthentication(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	store, err := comments.NewJSONFileCommentStore(tempDir)
+	store, err := comments.NewJSONFileCommentStore(tempDir, "version")
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}

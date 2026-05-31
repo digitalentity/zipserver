@@ -37,7 +37,8 @@ type CacheConfig struct {
 }
 
 type CommentsConfig struct {
-	Dir string `yaml:"dir"`
+	Dir   string `yaml:"dir"`
+	Scope string `yaml:"scope"`
 }
 
 type Config struct {
@@ -80,6 +81,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Comments.Dir == "" {
 		cfg.Comments.Dir = "./comments"
 	}
+	if cfg.Comments.Scope == "" {
+		cfg.Comments.Scope = "version"
+	}
 
 	if os.Getenv("PORT") != "" {
 		cfg.Port = os.Getenv("PORT")
@@ -95,6 +99,9 @@ func Load(path string) (*Config, error) {
 	}
 	if os.Getenv("COMMENTS_DIR") != "" {
 		cfg.Comments.Dir = os.Getenv("COMMENTS_DIR")
+	}
+	if os.Getenv("COMMENTS_SCOPE") != "" {
+		cfg.Comments.Scope = os.Getenv("COMMENTS_SCOPE")
 	}
 	if os.Getenv("GCS_BUCKET") != "" {
 		cfg.GCS.Bucket = os.Getenv("GCS_BUCKET")

@@ -105,7 +105,7 @@ func TestJSONFileCommentStore(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	store, err := NewJSONFileCommentStore(tempDir)
+	store, err := NewJSONFileCommentStore(tempDir, "version")
 	if err != nil {
 		t.Fatalf("failed to create JSONFileCommentStore: %v", err)
 	}
@@ -231,3 +231,42 @@ func TestJSONFileCommentStore(t *testing.T) {
 		t.Error("reply comment ID still in index after delete")
 	}
 }
+
+func TestJSONFileCommentStoreBookScope(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "zipserver-comments-book-scope-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	store, err := NewJSONFileCommentStore(tempDir, "book")
+	if err != nil {
+		t.Fatalf("failed to create JSONFileCommentStore: %v", err)
+	}
+
+	ctx := context.Background()
+	book := "testbook"
+	pagePath := "index.html"
+
+	// Create comment under v1.0
+	anno := &Annotation{
+		Creator: Creator{ID: "usr_alex", Name: "Alex"},
+		Body:    TextualBody{Value: "Hello under v1.0"},
+	}
+	_, err = store.CreateComment(ctx, book, "v1.0", pagePath, anno)
+	if err != nil {
+		t.Fatalf("CreateComment failed: %v", err)
+	}
+
+	// Retrieve comments on v2.0 - should find the comment!
+	annos, err := store.GetComments(ctx, book, "v2.0", pagePath)
+	if err != nil {
+		t.Fatalf("GetComments failed: %v", err)
+	}
+	if len(annos) != 1 {
+		t.Errorf("expected 1 comment under v2.0 (book scope), got %d", len(annos))
+	} else if annos[0].Body.Value != "Hello under v1.0" {
+		t.Errorf("expected comment body 'Hello under v1.0', got %q", annos[0].Body.Value)
+	}
+}
+

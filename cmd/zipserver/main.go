@@ -75,7 +75,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	commentStore, err := comments.NewJSONFileCommentStore(cfg.Comments.Dir)
+	commentStore, err := comments.NewJSONFileCommentStore(cfg.Comments.Dir, cfg.Comments.Scope)
 	if err != nil {
 		slog.Error("failed to initialize comment store", "error", err)
 		os.Exit(1)

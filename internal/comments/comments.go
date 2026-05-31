@@ -183,6 +183,7 @@ type CommentStore interface {
 // JSONFileCommentStore implements CommentStore using local JSON files
 type JSONFileCommentStore struct {
 	rootDir string
+	scope   string
 	mu      sync.RWMutex
 
 	// Index map from comment ID to its page context details
@@ -195,13 +196,18 @@ type pageInfo struct {
 	pagePath string
 }
 
-func NewJSONFileCommentStore(rootDir string) (*JSONFileCommentStore, error) {
+func NewJSONFileCommentStore(rootDir string, scope string) (*JSONFileCommentStore, error) {
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create comments directory: %w", err)
 	}
 
+	if scope == "" {
+		scope = "version"
+	}
+
 	store := &JSONFileCommentStore{
 		rootDir:      rootDir,
+		scope:        scope,
 		commentIndex: make(map[string]pageInfo),
 	}
 
@@ -210,6 +216,14 @@ func NewJSONFileCommentStore(rootDir string) (*JSONFileCommentStore, error) {
 	}
 
 	return store, nil
+}
+
+func (s *JSONFileCommentStore) resolveFilePath(book, version, pagePath string) string {
+	hash := HashPagePath(pagePath)
+	if s.scope == "book" {
+		return filepath.Join(s.rootDir, book, hash+".json")
+	}
+	return filepath.Join(s.rootDir, book, version, hash+".json")
 }
 
 func (s *JSONFileCommentStore) rebuildIndex() error {
@@ -231,11 +245,19 @@ func (s *JSONFileCommentStore) rebuildIndex() error {
 			return nil
 		}
 		relParts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(relParts) < 3 {
-			return nil
+		var book, version string
+		if s.scope == "book" {
+			if len(relParts) < 2 {
+				return nil
+			}
+			book = relParts[0]
+		} else {
+			if len(relParts) < 3 {
+				return nil
+			}
+			book = relParts[0]
+			version = relParts[1]
 		}
-		book := relParts[0]
-		version := relParts[1]
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -250,9 +272,13 @@ func (s *JSONFileCommentStore) rebuildIndex() error {
 
 		for _, anno := range annos {
 			if anno.ID != "" {
+				v := anno.Version
+				if v == "" {
+					v = version
+				}
 				s.commentIndex[anno.ID] = pageInfo{
 					book:     book,
-					version:  version,
+					version:  v,
 					pagePath: anno.Page,
 				}
 			}
@@ -269,8 +295,7 @@ func (s *JSONFileCommentStore) GetComments(ctx context.Context, book, version, p
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	hash := HashPagePath(pagePath)
-	filePath := filepath.Join(s.rootDir, book, version, hash+".json")
+	filePath := s.resolveFilePath(book, version, pagePath)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -310,13 +335,12 @@ func (s *JSONFileCommentStore) CreateComment(ctx context.Context, book, version,
 	anno.Page = pagePath
 	anno.Version = version
 
-	hash := HashPagePath(pagePath)
-	versionDir := filepath.Join(s.rootDir, book, version)
-	if err := os.MkdirAll(versionDir, 0755); err != nil {
+	filePath := s.resolveFilePath(book, version, pagePath)
+	dirPath := filepath.Dir(filePath)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return nil, err
 	}
 
-	filePath := filepath.Join(versionDir, hash+".json")
 	var annos []Annotation
 
 	data, err := os.ReadFile(filePath)
@@ -355,8 +379,7 @@ func (s *JSONFileCommentStore) UpdateComment(ctx context.Context, book, id strin
 		return nil, os.ErrNotExist
 	}
 
-	hash := HashPagePath(info.pagePath)
-	filePath := filepath.Join(s.rootDir, book, info.version, hash+".json")
+	filePath := s.resolveFilePath(book, info.version, info.pagePath)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -407,8 +430,7 @@ func (s *JSONFileCommentStore) DeleteComment(ctx context.Context, book, id strin
 		return os.ErrNotExist
 	}
 
-	hash := HashPagePath(info.pagePath)
-	filePath := filepath.Join(s.rootDir, book, info.version, hash+".json")
+	filePath := s.resolveFilePath(book, info.version, info.pagePath)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {

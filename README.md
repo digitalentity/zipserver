@@ -19,29 +19,153 @@ Zipserver is a simple Go application designed to serve static content (like `mdb
 - **Web UI Authentication:** Integrated Google OAuth 2.0 with domain/user allow-listing.
 - **Modern Architecture:** Modular Go implementation with dependency injection and clean separation of concerns.
 
-## URL Structure
+## URL & API Endpoints
 
-| Path | Description |
-|------|-------------|
-| `/` | Lists all available **Books**. |
-| `/{book}/` | Lists all available **Versions** for the selected book. |
-| `/{book}/latest/` | Permanent link to the **latest** version of the book. |
-| `/{book}/{version}/` | Serves the `index.html` from the version's zip archive. |
-| `/{book}/{version}/{path}` | Serves the specific file from the version's zip archive. |
-| `/_/upload?book=X&version=Y` | **POST/PUT**: Uploads a new zip version for a book. |
+### Static Content & Uploads
 
-## Authentication
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Lists all available **Books**. |
+| `GET` | `/{book}/` | Lists all available **Versions** for the selected book. |
+| `GET` | `/{book}/latest/` | 302 Redirect to the **latest** version of the book. |
+| `GET` | `/{book}/{version}/` | Serves the `index.html` from the version's zip archive. |
+| `GET` | `/{book}/{version}/{path}` | Serves the specific file from the version's zip archive. |
+| `POST/PUT` | `/_/upload?book=X&version=Y` | Uploads a new zip version for a book. |
 
-### Web UI (Google OAuth 2.0)
-Access to the browsing interface is restricted via Google OAuth. Only users matching the `allowed_users` patterns (exact email or `*@domain.com`) can log in. System routes like login and callback are prefixed with `/_/` (e.g., `/_/login`, `/_/callback`) to avoid collisions with book names.
+### Authentication API
 
-### API (Bearer Token)
-The `/_/upload` endpoint requires an `Authorization: Bearer <token>` header.
-```bash
-curl -X POST "http://localhost:8080/_/upload?book=docs&version=v1.2.0" \
-     -H "Authorization: Bearer your-secret-token" \
-     --data-binary @build.zip
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/_/api/v1/auth/me` | Gets current user session and profile details. |
+| `GET` | `/_/login?redirect=X` | Initiates Google OAuth flow, preserving the redirect target path. |
+| `GET` | `/_/logout?redirect=X` | Clears the session cookie and redirects back. |
+| `GET` | `/_/callback` | Google OAuth callback URL (processes authorization code). |
+
+### Comments & Annotations API (W3C Web Annotation Compliant)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/_/api/v1/comments?page=X` | Retrieves all annotations and replies for a specific page. |
+| `POST` | `/_/api/v1/comments` | Creates a new annotation or thread reply. |
+| `PATCH` | `/_/api/v1/comments/{id}` | Updates comment text or resolves/reopens a thread. |
+| `DELETE` | `/_/api/v1/comments/{id}` | Deletes an annotation and cascades delete to replies (owner only). |
+
+## API Reference
+
+### 1. File Upload API
+
+#### Upload Book Version (`POST/PUT /_/upload`)
+Uploads a compiled documentation zip archive for a specific book and version.
+*   **Query Parameters**:
+    *   `book` (string, required): The identifier of the book (e.g., `docs`).
+    *   `version` (string, required): The version tag or git commit hash (e.g., `v1.2.0`).
+*   **Headers**:
+    *   `Authorization: Bearer <your-secret-token>` (Bearer authentication token from configuration).
+*   **Request Body**: Raw binary data of the ZIP archive.
+*   **Response (201 Created)**:
+    ```json
+    {
+      "outcome": "success",
+      "uri": "/docs/v1.2.0/"
+    }
+    ```
+
+### 2. Authentication API
+
+#### Get User Profile (`GET /_/api/v1/auth/me`)
+Retrieves the logged-in user profile or unauthenticated status.
+*   **Response (Authenticated - 200 OK)**:
+    ```json
+    {
+      "authenticated": true,
+      "user": {
+        "id": "usr_102938102938102938",
+        "name": "Alex Mercer",
+        "avatarUrl": "https://lh3.googleusercontent.com/..."
+      }
+    }
+    ```
+*   **Response (Unauthenticated - 200 OK)**:
+    ```json
+    {
+      "authenticated": false,
+      "user": null
+    }
+    ```
+
+#### Initiate Login (`GET /_/login`)
+Redirects the user to Google's OAuth consent screen.
+*   **Query Parameters**:
+    *   `redirect` (string, optional): The URL path to redirect to after successful authentication.
+
+#### Process Logout (`GET /_/logout`)
+Destroys the active session cookie.
+*   **Query Parameters**:
+    *   `redirect` (string, optional): The URL path to redirect to after logout completes (defaults to `/`).
+
+### 3. Comments & Annotations API
+
+Every comment, highlight, and reply is modeled as a W3C Web Annotation entity.
+
+#### Get Page Comments (`GET /_/api/v1/comments`)
+Fetches all annotation threads (highlights and replies) for a specific book page.
+*   **Query Parameters**:
+    *   `page` (string, required): The relative URL path or absolute URL of the page (e.g., `/docs/v1.0/system/architecture.html`).
+*   **Response (200 OK)**: JSON array of Annotation entities.
+
+#### Create Comment or Reply (`POST /_/api/v1/comments`)
+Creates a parent highlight annotation or a thread reply.
+*   **Payload (Parent Highlight/Comment)**:
+    ```json
+    {
+      "body": {
+        "value": "My comment markdown..."
+      },
+      "target": {
+        "source": "/docs/v1.0/system/architecture.html",
+        "selector": [
+          {
+            "type": "TextQuoteSelector",
+            "exact": "Triple Redundancy"
+          }
+        ]
+      }
+    }
+    ```
+*   **Payload (Thread Reply)**:
+    ```json
+    {
+      "body": {
+        "value": "My reply markdown..."
+      },
+      "target": "anno_xyz789",
+      "motivation": "replying"
+    }
+    ```
+*   **Response (201 Created)**: The fully constructed JSON W3C Annotation entity.
+
+#### Update Comment (`PATCH /_/api/v1/comments/{id}`)
+Modifies a comment's body text or resolves a thread.
+*   **Payload (Edit Text - Creator Only)**:
+    ```json
+    {
+      "body": {
+        "value": "Updated text..."
+      }
+    }
+    ```
+*   **Payload (Resolve/Reopen)**:
+    ```json
+    {
+      "resolved": true
+    }
+    ```
+*   **Response (200 OK)**: The updated Annotation entity.
+
+#### Delete Comment (`DELETE /_/api/v1/comments/{id}`)
+Deletes an annotation. If a parent is deleted, all reply annotations targeting it are cascade-deleted.
+*   **Authorization**: Allowed only for the creator of the comment.
+*   **Response (204 No Content)**: Successful deletion.
 
 ## Configuration
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"zipserver/internal/auth"
+	"zipserver/internal/comments"
 	"zipserver/internal/config"
 	"zipserver/internal/server"
 	"zipserver/internal/storage"
@@ -60,8 +62,8 @@ func main() {
 		}
 
 	default: // "local"
-		if _, err := os.Stat(cfg.ZipDir); os.IsNotExist(err) {
-			slog.Error("zip directory does not exist", "path", cfg.ZipDir)
+		if err := os.MkdirAll(cfg.ZipDir, 0755); err != nil {
+			slog.Error("failed to create zip directory", "path", cfg.ZipDir, "error", err)
 			os.Exit(1)
 		}
 		storageBackend = storage.NewLocalStorage(cfg.ZipDir)
@@ -73,7 +75,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv, err := server.NewServer(cfg, storageBackend)
+	commentStore, err := comments.NewJSONFileCommentStore(cfg.Comments.Dir)
+	if err != nil {
+		slog.Error("failed to initialize comment store", "error", err)
+		os.Exit(1)
+	}
+
+	srv, err := server.NewServer(cfg, storageBackend, commentStore, authenticator)
 	if err != nil {
 		slog.Error("failed to initialize server", "error", err)
 		os.Exit(1)
@@ -81,11 +89,45 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// Comments API endpoints
+	mux.HandleFunc("GET /_/api/v1/comments", srv.HandleGetComments)
+	mux.HandleFunc("POST /_/api/v1/comments", srv.HandleCreateComment)
+	mux.HandleFunc("PATCH /_/api/v1/comments/{id}", srv.HandleUpdateComment)
+	mux.HandleFunc("DELETE /_/api/v1/comments/{id}", srv.HandleDeleteComment)
+
 	if authenticator != nil {
 		mux.HandleFunc("/_/login", authenticator.HandleLogin)
+		mux.HandleFunc("/_/logout", authenticator.HandleLogout)
 		mux.HandleFunc("/_/callback", authenticator.HandleCallback)
+
+		// OAuth endpoints compliant with COMMENTAPI.md
+		mux.HandleFunc("/_/api/v1/auth/me", authenticator.HandleAuthMe)
+
 		mux.Handle("/", authenticator.AuthMiddleware(http.HandlerFunc(srv.HandleIndex)))
 	} else {
+		// Mock auth endpoints when auth is disabled
+		mux.HandleFunc("/_/api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"authenticated": false,
+				"user":          nil,
+			})
+		})
+		mux.HandleFunc("/_/login", func(w http.ResponseWriter, r *http.Request) {
+			redirect := r.URL.Query().Get("redirect")
+			if redirect == "" {
+				redirect = "/"
+			}
+			http.Redirect(w, r, redirect, http.StatusFound)
+		})
+		mux.HandleFunc("/_/logout", func(w http.ResponseWriter, r *http.Request) {
+			redirect := r.URL.Query().Get("redirect")
+			if redirect == "" {
+				redirect = "/"
+			}
+			http.Redirect(w, r, redirect, http.StatusFound)
+		})
+
 		mux.HandleFunc("/", srv.HandleIndex)
 	}
 

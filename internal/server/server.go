@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 
+	"zipserver/internal/auth"
+	"zipserver/internal/comments"
 	"zipserver/internal/config"
 	"zipserver/internal/storage"
 )
@@ -38,6 +40,8 @@ type Server struct {
 	storage     storage.Storage
 	bookTmpl    *template.Template
 	versionTmpl *template.Template
+	comments    comments.CommentStore
+	auth        *auth.Authenticator
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data any) {
@@ -51,7 +55,7 @@ func renderTemplate(w http.ResponseWriter, tmpl *template.Template, data any) {
 	buf.WriteTo(w)
 }
 
-func NewServer(cfg *config.Config, s storage.Storage) (*Server, error) {
+func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a *auth.Authenticator) (*Server, error) {
 	bookTmpl, err := template.ParseFS(templateFS, "templates/books.html.tpl")
 	if err != nil {
 		return nil, err
@@ -65,6 +69,8 @@ func NewServer(cfg *config.Config, s storage.Storage) (*Server, error) {
 		storage:     s,
 		bookTmpl:    bookTmpl,
 		versionTmpl: versionTmpl,
+		comments:    c,
+		auth:        a,
 	}, nil
 }
 
@@ -90,7 +96,15 @@ func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		version = resolved
+		newPath := fmt.Sprintf("/%s/%s/", book, resolved)
+		if len(parts) > 2 {
+			newPath = fmt.Sprintf("/%s/%s/%s", book, resolved, strings.Join(parts[2:], "/"))
+		}
+		if r.URL.RawQuery != "" {
+			newPath += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, newPath, http.StatusFound)
+		return
 	}
 
 	innerPath := ""

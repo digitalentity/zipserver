@@ -13,6 +13,7 @@ config.yaml
 # Data and Cache
 .cache/
 .publish/
+.comments/
 cache/
 publish/
 
@@ -28,3 +29,6 @@ cover.out
 *.swp
 *.swo
 .DS_Store
+
+# Agents
+.antigravitycli

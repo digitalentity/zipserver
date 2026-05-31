@@ -36,15 +36,20 @@ type CacheConfig struct {
 	TTL string `yaml:"ttl"`
 }
 
+type CommentsConfig struct {
+	Dir string `yaml:"dir"`
+}
+
 type Config struct {
-	Port        string       `yaml:"port"`
-	StorageType string       `yaml:"storage_type"` // "local", "gcs", "drive"
-	ZipDir      string       `yaml:"zip_dir"`      // for local
-	Cache       CacheConfig  `yaml:"cache"`        // for cloud caching
-	GCS         GCSConfig    `yaml:"gcs"`
-	Drive       DriveConfig  `yaml:"drive"`
-	Auth        AuthConfig   `yaml:"auth"`
-	Upload      UploadConfig `yaml:"upload"`
+	Port        string         `yaml:"port"`
+	StorageType string         `yaml:"storage_type"` // "local", "gcs", "drive"
+	ZipDir      string         `yaml:"zip_dir"`      // for local
+	Cache       CacheConfig    `yaml:"cache"`        // for cloud caching
+	GCS         GCSConfig      `yaml:"gcs"`
+	Drive       DriveConfig    `yaml:"drive"`
+	Auth        AuthConfig     `yaml:"auth"`
+	Upload      UploadConfig   `yaml:"upload"`
+	Comments    CommentsConfig `yaml:"comments"`
 }
 
 func Load(path string) (*Config, error) {
@@ -72,6 +77,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Cache.TTL == "" {
 		cfg.Cache.TTL = "1m"
 	}
+	if cfg.Comments.Dir == "" {
+		cfg.Comments.Dir = "./comments"
+	}
 
 	if os.Getenv("PORT") != "" {
 		cfg.Port = os.Getenv("PORT")
@@ -84,6 +92,9 @@ func Load(path string) (*Config, error) {
 	}
 	if os.Getenv("CACHE_DIR") != "" {
 		cfg.Cache.Dir = os.Getenv("CACHE_DIR")
+	}
+	if os.Getenv("COMMENTS_DIR") != "" {
+		cfg.Comments.Dir = os.Getenv("COMMENTS_DIR")
 	}
 	if os.Getenv("GCS_BUCKET") != "" {
 		cfg.GCS.Bucket = os.Getenv("GCS_BUCKET")

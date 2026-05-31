@@ -42,8 +42,9 @@ func NewCachingStorage(base Storage, cacheDir string, cacheTTL time.Duration) (*
 func (c *CachingStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 	c.cacheMu.RLock()
 	if time.Since(c.booksFetchedAt) < c.cacheTTL {
-		defer c.cacheMu.RUnlock()
-		return c.booksCache, nil
+		result := copyBooks(c.booksCache)
+		c.cacheMu.RUnlock()
+		return result, nil
 	}
 	c.cacheMu.RUnlock()
 
@@ -52,7 +53,7 @@ func (c *CachingStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 
 	// Re-check after acquiring write lock
 	if time.Since(c.booksFetchedAt) < c.cacheTTL {
-		return c.booksCache, nil
+		return copyBooks(c.booksCache), nil
 	}
 
 	books, err := c.base.ListBooks(ctx)
@@ -62,7 +63,7 @@ func (c *CachingStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 
 	c.booksCache = books
 	c.booksFetchedAt = time.Now()
-	return books, nil
+	return copyBooks(books), nil
 }
 
 func (c *CachingStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
@@ -92,6 +93,12 @@ func (c *CachingStorage) ListVersions(ctx context.Context, book string) ([]Versi
 	return copyVersions(versions), nil
 }
 
+func copyBooks(src []BookInfo) []BookInfo {
+	dst := make([]BookInfo, len(src))
+	copy(dst, src)
+	return dst
+}
+
 func copyVersions(src []VersionInfo) []VersionInfo {
 	dst := make([]VersionInfo, len(src))
 	copy(dst, src)
@@ -99,10 +106,7 @@ func copyVersions(src []VersionInfo) []VersionInfo {
 }
 
 func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
-	v := version
-	if !strings.HasSuffix(v, ".zip") {
-		v += ".zip"
-	}
+	v := EnsureZipSuffix(version)
 	cachePath := filepath.Join(c.cacheDir, book, v)
 
 	// Deduplicate concurrent downloads of the same (book, version). Different
@@ -128,10 +132,7 @@ func (c *CachingStorage) OpenZip(ctx context.Context, book, version string) (Zip
 }
 
 func (c *CachingStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
-	v := version
-	if !strings.HasSuffix(v, ".zip") {
-		v += ".zip"
-	}
+	v := EnsureZipSuffix(version)
 	cachePath := filepath.Join(c.cacheDir, book, v)
 
 	_, err, _ := c.sf.Do(book+"/"+v, func() (any, error) {
@@ -218,10 +219,7 @@ func (c *CachingStorage) UploadZip(ctx context.Context, book, version string, r 
 	}
 
 	// Invalidate cache on upload
-	v := version
-	if !strings.HasSuffix(v, ".zip") {
-		v += ".zip"
-	}
+	v := EnsureZipSuffix(version)
 	cachePath := filepath.Join(c.cacheDir, book, v)
 	_ = os.Remove(cachePath)
 

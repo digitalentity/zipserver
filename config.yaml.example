@@ -28,3 +28,6 @@ auth:
 upload:
   enabled: true
   token: "your-secret-upload-token" # for Bearer authentication
+
+comments:
+  dir: "./comments"

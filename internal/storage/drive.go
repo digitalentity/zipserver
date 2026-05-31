@@ -54,7 +54,7 @@ func (d *DriveStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 }
 
 func (d *DriveStorage) findFolder(ctx context.Context, name string) (string, error) {
-	if err := validateName(name); err != nil {
+	if err := ValidateName(name); err != nil {
 		return "", err
 	}
 	query := fmt.Sprintf("'%s' in parents and name = '%s' and mimeType = 'application/vnd.google-apps.folder' and trashed = false", d.folderID, name)
@@ -124,7 +124,7 @@ func (df *driveFile) Close() error { return nil }
 func (d *DriveStorage) Close() error { return nil }
 
 func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
-	if err := validateName(version); err != nil {
+	if err := ValidateName(version); err != nil {
 		return nil, err
 	}
 	bookID, err := d.findFolder(ctx, book)
@@ -132,9 +132,7 @@ func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 		return nil, err
 	}
 
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
+	version = EnsureZipSuffix(version)
 
 	query := fmt.Sprintf("'%s' in parents and name = '%s' and trashed = false", bookID, version)
 	res, err := d.service.Files.List().Q(query).Fields("files(id, size)").Context(ctx).Do()
@@ -152,7 +150,7 @@ func (d *DriveStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 }
 
 func (d *DriveStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
-	if err := validateName(version); err != nil {
+	if err := ValidateName(version); err != nil {
 		return nil, err
 	}
 	bookID, err := d.findFolder(ctx, book)
@@ -160,9 +158,7 @@ func (d *DriveStorage) OpenZipStream(ctx context.Context, book, version string) 
 		return nil, err
 	}
 
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
+	version = EnsureZipSuffix(version)
 
 	query := fmt.Sprintf("'%s' in parents and name = '%s' and trashed = false", bookID, version)
 	res, err := d.service.Files.List().Q(query).Fields("files(id)").Context(ctx).Do()
@@ -178,7 +174,7 @@ func (d *DriveStorage) OpenZipStream(ctx context.Context, book, version string) 
 }
 
 func (d *DriveStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
-	if err := validateName(version); err != nil {
+	if err := ValidateName(version); err != nil {
 		return err
 	}
 	bookID, err := d.findFolder(ctx, book)
@@ -198,9 +194,7 @@ func (d *DriveStorage) UploadZip(ctx context.Context, book, version string, r io
 		bookID = res.Id
 	}
 
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
+	version = EnsureZipSuffix(version)
 
 	f := &drive.File{
 		Name:    version,

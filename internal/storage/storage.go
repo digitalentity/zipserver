@@ -11,11 +11,18 @@ import (
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9._\-:+~]+$`)
 
-func validateName(s string) error {
+func ValidateName(s string) error {
 	if !validName.MatchString(s) || strings.Contains(s, "..") {
 		return fmt.Errorf("invalid name %q: must match [a-zA-Z0-9._-]+ and must not contain ..", s)
 	}
 	return nil
+}
+
+func EnsureZipSuffix(version string) string {
+	if !strings.HasSuffix(version, ".zip") {
+		return version + ".zip"
+	}
+	return version
 }
 
 type BookInfo struct {

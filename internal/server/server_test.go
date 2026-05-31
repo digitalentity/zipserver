@@ -44,7 +44,7 @@ func (m *mockZipContent) Size() int64 { return m.size }
 func (m *mockZipContent) Close() error { return nil }
 
 func TestHandleUpload(t *testing.T) {
-	srv, _ := NewServer(nil, &mockStorage{})
+	srv, _ := NewServer(nil, &mockStorage{}, nil, nil)
 
 	tests := []struct {
 		name        string
@@ -130,7 +130,7 @@ func TestServeFromZipIntegration(t *testing.T) {
 		zipData: buf.Bytes(),
 	}
 	
-	srv, _ := NewServer(nil, m)
+	srv, _ := NewServer(nil, m, nil, nil)
 
 	tests := []struct {
 		url          string
@@ -143,6 +143,8 @@ func TestServeFromZipIntegration(t *testing.T) {
 		{"/book1/v1/css/style.css", http.StatusOK, "body { color: red; }", "text/css"},
 		{"/book1/v1/js/app.js", http.StatusOK, "console.log('hello');", "text/javascript"},
 		{"/book1/v1/nonexistent", http.StatusNotFound, "", ""},
+		{"/book1/latest/", http.StatusFound, "", ""},
+		{"/book1/latest/css/style.css", http.StatusFound, "", ""},
 	}
 
 	for _, tt := range tests {
@@ -153,6 +155,16 @@ func TestServeFromZipIntegration(t *testing.T) {
 
 			if rr.Code != tt.wantStatus {
 				t.Errorf("URL %s: expected status %d, got %d", tt.url, tt.wantStatus, rr.Code)
+			}
+			if tt.wantStatus == http.StatusFound {
+				loc := rr.Header().Get("Location")
+				expected := "/book1/v1/"
+				if strings.HasSuffix(tt.url, "css/style.css") {
+					expected = "/book1/v1/css/style.css"
+				}
+				if loc != expected {
+					t.Errorf("URL %s: expected redirect to %q, got %q", tt.url, expected, loc)
+				}
 			}
 			if tt.wantStatus == http.StatusOK {
 				if !strings.Contains(rr.Body.String(), tt.wantContent) {

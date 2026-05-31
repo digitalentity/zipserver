@@ -52,8 +52,11 @@ func NewAuthenticator(cfg *config.AuthConfig) (*Authenticator, error) {
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
 		RedirectURL:  cfg.RedirectURL,
-		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
-		Endpoint:     google.Endpoint,
+		Scopes: []string{
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		Endpoint: google.Endpoint,
 	}
 
 	slog.Info("authenticator initialized", "secure_cookies", secure, "redirect_url", cfg.RedirectURL)
@@ -101,6 +104,20 @@ func (a *Authenticator) AuthMiddleware(next http.Handler) http.Handler {
 }
 
 func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	session, err := a.store.Get(r, sessionName)
+	if err != nil {
+		slog.Warn("failed to get session in login handler", "error", err)
+	}
+
+	redirect := r.URL.Query().Get("redirect")
+	if redirect != "" {
+		session.Values["next"] = redirect
+		session.Options.Secure = a.isSecure(r)
+		if err := session.Save(r, w); err != nil {
+			slog.Error("failed to save session in login handler", "error", err)
+		}
+	}
+
 	state, err := a.generateState(w, r)
 	if err != nil {
 		slog.Error("failed to generate oauth state", "error", err)
@@ -154,18 +171,21 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	var user struct {
-		Email string `json:"email"`
+	var googleUser struct {
+		ID      string `json:"id"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Picture string `json:"picture"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
 		slog.Error("failed to decode user info", "error", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	if !a.IsUserAllowed(user.Email) {
-		slog.Warn("forbidden: user not in allowed list", "email", user.Email)
-		http.Error(w, "Forbidden: User "+user.Email+" is not in the allowed list", http.StatusForbidden)
+	if !a.IsUserAllowed(googleUser.Email) {
+		slog.Warn("forbidden: user not in allowed list", "email", googleUser.Email)
+		http.Error(w, "Forbidden: User "+googleUser.Email+" is not in the allowed list", http.StatusForbidden)
 		return
 	}
 
@@ -174,9 +194,12 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("failed to get session in callback", "error", err)
 	}
 	session.Values["authenticated"] = true
-	session.Values["email"] = user.Email
+	session.Values["email"] = googleUser.Email
+	session.Values["user_id"] = "usr_" + googleUser.ID
+	session.Values["user_name"] = googleUser.Name
+	session.Values["avatar_url"] = googleUser.Picture
 
-	slog.Info("user authenticated", "email", user.Email)
+	slog.Info("user authenticated", "email", googleUser.Email, "name", googleUser.Name)
 
 	nextURL := "/"
 	if val, ok := session.Values["next"].(string); ok && val != "" {
@@ -211,4 +234,68 @@ func (a *Authenticator) IsUserAllowed(email string) bool {
 		}
 	}
 	return false
+}
+
+func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	session, err := a.store.Get(r, sessionName)
+	if err != nil {
+		slog.Warn("failed to get session in logout handler", "error", err)
+	}
+
+	session.Values = make(map[any]any)
+	session.Options.MaxAge = -1 // expire immediately
+	session.Options.Secure = a.isSecure(r)
+	if err := session.Save(r, w); err != nil {
+		slog.Error("failed to save session in logout handler", "error", err)
+	}
+
+	redirect := r.URL.Query().Get("redirect")
+	if redirect == "" {
+		redirect = "/"
+	}
+	http.Redirect(w, r, redirect, http.StatusFound)
+}
+
+type SessionUser struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl"`
+}
+
+func (a *Authenticator) GetSessionUser(r *http.Request) (*SessionUser, bool) {
+	if a == nil {
+		return nil, false
+	}
+	session, err := a.store.Get(r, sessionName)
+	if err != nil {
+		return nil, false
+	}
+	auth, ok := session.Values["authenticated"].(bool)
+	if !ok || !auth {
+		return nil, false
+	}
+	id, _ := session.Values["user_id"].(string)
+	name, _ := session.Values["user_name"].(string)
+	avatar, _ := session.Values["avatar_url"].(string)
+	return &SessionUser{
+		ID:        id,
+		Name:      name,
+		AvatarURL: avatar,
+	}, true
+}
+
+func (a *Authenticator) HandleAuthMe(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user, authenticated := a.GetSessionUser(r)
+	if !authenticated {
+		json.NewEncoder(w).Encode(map[string]any{
+			"authenticated": false,
+			"user":          nil,
+		})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"authenticated": true,
+		"user":          user,
+	})
 }

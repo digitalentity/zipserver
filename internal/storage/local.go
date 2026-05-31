@@ -34,7 +34,7 @@ func (l *LocalStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 }
 
 func (l *LocalStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
-	if err := validateName(book); err != nil {
+	if err := ValidateName(book); err != nil {
 		return nil, err
 	}
 	bookDir := filepath.Join(l.dir, book)
@@ -69,18 +69,21 @@ type localFile struct {
 func (lf *localFile) Size() int64 {
 	return lf.size
 }
+func (l *LocalStorage) resolvePath(book, version string) (string, error) {
+	if err := ValidateName(book); err != nil {
+		return "", err
+	}
+	if err := ValidateName(version); err != nil {
+		return "", err
+	}
+	return filepath.Join(l.dir, book, EnsureZipSuffix(version)), nil
+}
 
 func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
-	if err := validateName(book); err != nil {
+	path, err := l.resolvePath(book, version)
+	if err != nil {
 		return nil, err
 	}
-	if err := validateName(version); err != nil {
-		return nil, err
-	}
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
-	path := filepath.Join(l.dir, book, version)
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -96,35 +99,23 @@ func (l *LocalStorage) OpenZip(ctx context.Context, book, version string) (ZipFi
 }
 
 func (l *LocalStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
-	if err := validateName(book); err != nil {
+	path, err := l.resolvePath(book, version)
+	if err != nil {
 		return nil, err
 	}
-	if err := validateName(version); err != nil {
-		return nil, err
-	}
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
-	path := filepath.Join(l.dir, book, version)
 	return os.Open(path)
 }
 
 func (l *LocalStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
-	if err := validateName(book); err != nil {
+	path, err := l.resolvePath(book, version)
+	if err != nil {
 		return err
 	}
-	if err := validateName(version); err != nil {
-		return err
-	}
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
-	}
-	bookDir := filepath.Join(l.dir, book)
+	bookDir := filepath.Dir(path)
 	if err := os.MkdirAll(bookDir, 0755); err != nil {
 		return err
 	}
 
-	path := filepath.Join(bookDir, version)
 	f, err := os.Create(path)
 	if err != nil {
 		return err

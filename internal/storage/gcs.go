@@ -50,6 +50,9 @@ func (g *GCSStorage) ListBooks(ctx context.Context) ([]BookInfo, error) {
 }
 
 func (g *GCSStorage) ListVersions(ctx context.Context, book string) ([]VersionInfo, error) {
+	if err := ValidateName(book); err != nil {
+		return nil, err
+	}
 	prefix := book + "/"
 	it := g.client.Bucket(g.bucket).Objects(ctx, &storage.Query{Prefix: prefix})
 	var versions []VersionInfo
@@ -99,10 +102,13 @@ func (gf *gcsFile) Close() error {
 }
 
 func (g *GCSStorage) OpenZip(ctx context.Context, book, version string) (ZipFileContent, error) {
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
+	if err := ValidateName(book); err != nil {
+		return nil, err
 	}
-	name := book + "/" + version
+	if err := ValidateName(version); err != nil {
+		return nil, err
+	}
+	name := book + "/" + EnsureZipSuffix(version)
 	obj := g.client.Bucket(g.bucket).Object(name)
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {
@@ -118,20 +124,26 @@ func (g *GCSStorage) OpenZip(ctx context.Context, book, version string) (ZipFile
 }
 
 func (g *GCSStorage) OpenZipStream(ctx context.Context, book, version string) (io.ReadCloser, error) {
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
+	if err := ValidateName(book); err != nil {
+		return nil, err
 	}
-	name := book + "/" + version
+	if err := ValidateName(version); err != nil {
+		return nil, err
+	}
+	name := book + "/" + EnsureZipSuffix(version)
 	return g.client.Bucket(g.bucket).Object(name).NewReader(ctx)
 }
 
 func (g *GCSStorage) Close() error { return g.client.Close() }
 
 func (g *GCSStorage) UploadZip(ctx context.Context, book, version string, r io.Reader) error {
-	if !strings.HasSuffix(version, ".zip") {
-		version += ".zip"
+	if err := ValidateName(book); err != nil {
+		return err
 	}
-	name := book + "/" + version
+	if err := ValidateName(version); err != nil {
+		return err
+	}
+	name := book + "/" + EnsureZipSuffix(version)
 	w := g.client.Bucket(g.bucket).Object(name).NewWriter(ctx)
 	if _, err := io.Copy(w, r); err != nil {
 		w.Close()

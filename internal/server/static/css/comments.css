@@ -316,13 +316,14 @@ html.comments-sidebar-open .comment-sidebar {
     padding-top: 8px;
     margin-top: 4px;
     display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-items: flex-end;
 }
 
 .reply-input {
-    flex: 1;
-    min-height: 32px;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 48px;
     max-height: 120px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -350,6 +351,7 @@ html.comments-sidebar-open .comment-sidebar {
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.2s;
+    align-self: flex-end;
 }
 
 .reply-submit-btn:hover {

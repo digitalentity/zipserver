@@ -869,6 +869,27 @@
                 }
             });
         });
+
+        // Click on thread card to scroll target element into view
+        document.querySelectorAll('.thread-card:not(.new-thread-card)').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('a, button, input, textarea')) {
+                    return;
+                }
+                const threadId = card.id.replace('thread-card-', '');
+                const targetElement = document.querySelector(`[data-thread-id="${threadId}"]`);
+                if (targetElement) {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    targetElement.classList.remove('comment-highlight-flash');
+                    void targetElement.offsetWidth; // trigger reflow
+                    targetElement.classList.add('comment-highlight-flash');
+                    setTimeout(() => {
+                        targetElement.classList.remove('comment-highlight-flash');
+                    }, 2000);
+                }
+            });
+        });
     }
 
     // ==========================================

@@ -116,6 +116,7 @@ html.comments-sidebar-open .comment-sidebar {
     flex-direction: column;
     gap: 8px;
     transition: box-shadow 0.2s, border-color 0.2s;
+    cursor: pointer;
 }
 
 .thread-card:hover {
@@ -131,6 +132,7 @@ html.comments-sidebar-open .comment-sidebar {
     border-style: dashed;
     border-color: var(--links);
     background-color: rgba(31, 128, 130, 0.02);
+    cursor: default;
 }
 
 .card-header {
@@ -532,4 +534,21 @@ li .comment-paragraph-indicator::after {
 
 .comment-section-highlight.resolved-highlight:hover {
     background-color: rgba(128, 128, 128, 0.1) !important;
+}
+
+/* Flash animation when focusing/navigating to a comment on the page */
+@keyframes comment-flash-pulse {
+    0% {
+        outline: 3px solid var(--links);
+        outline-offset: 2px;
+        background-color: rgba(255, 215, 0, 0.6) !important;
+    }
+    100% {
+        outline: 3px solid transparent;
+        outline-offset: 0;
+    }
+}
+
+.comment-highlight-flash {
+    animation: comment-flash-pulse 2s ease-out;
 }

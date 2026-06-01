@@ -29,5 +29,9 @@ notifications:
     username: "noreply@example.com"
     password: "smtp-password"
     from: "Zipserver <noreply@example.com>"
+    tls: "starttls" # encryption policy: "none", "starttls", "ssl" (implicit TLS), or leave empty for port-based auto-detection
+    skip_verify: false # set to true to bypass certificate verification (e.g. for self-signed certificates)
+    hello: "" # HELO/EHLO domain name. If empty, auto-detected from base_url or sender email
   watchers:
     - "admin@example.com"
+

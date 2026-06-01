@@ -273,13 +273,27 @@ func getCommentID(r *http.Request) string {
 }
 
 func (s *Server) sendCommentNotification(anno comments.Annotation) {
+	slog.Info("processing comment notification",
+		"comment_id", anno.ID,
+		"book", anno.Book,
+		"version", anno.Version,
+		"page", anno.Page,
+		"creator", anno.Creator.Email,
+		"motivation", anno.Motivation,
+	)
+
 	pageComments, err := s.comments.GetComments(context.Background(), anno.Book, anno.Version, anno.Page)
 	if err != nil {
-		slog.Error("failed to get page comments for notification", "error", err)
+		slog.Error("failed to get page comments for notification", "comment_id", anno.ID, "error", err)
 		return
 	}
 
 	recipients := notifications.GetNotificationRecipients(anno, pageComments, s.notifications.Watchers)
+	slog.Info("notification recipients calculated",
+		"comment_id", anno.ID,
+		"recipient_count", len(recipients),
+		"recipients", recipients,
+	)
 	if len(recipients) == 0 {
 		return
 	}
@@ -304,8 +318,15 @@ func (s *Server) sendCommentNotification(anno comments.Annotation) {
 	body.WriteString(fmt.Sprintf("<p><a href=\"%s\">View Comment Thread</a></p>", pageURL))
 	body.WriteString("</body></html>")
 
+	slog.Info("sending notification email",
+		"comment_id", anno.ID,
+		"subject", subject,
+		"recipients", recipients,
+	)
 	err = s.mailer.SendEmail(recipients, subject, body.String())
 	if err != nil {
-		slog.Error("failed to send comment email notification", "error", err)
+		slog.Error("failed to send comment email notification", "comment_id", anno.ID, "error", err)
+	} else {
+		slog.Info("comment email notification sent successfully", "comment_id", anno.ID)
 	}
 }

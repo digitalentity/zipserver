@@ -149,12 +149,25 @@ notifications:
 		t.Errorf("unexpected watchers: %+v", cfg.Notifications.Watchers)
 	}
 
+	// Verify defaults are empty/false
+	if cfg.Notifications.SMTP.TLS != "" || cfg.Notifications.SMTP.SkipVerify || cfg.Notifications.SMTP.Hello != "" {
+		t.Errorf("expected default tls/hello to be empty and skip_verify false, got %+v", cfg.Notifications.SMTP)
+	}
+
 	// Test env override
 	os.Setenv("SMTP_PORT", "587")
 	os.Setenv("NOTIFICATIONS_ENABLED", "false")
+	os.Setenv("SMTP_WATCHERS", "a@b.com, c@d.com")
+	os.Setenv("SMTP_TLS", "ssl")
+	os.Setenv("SMTP_SKIP_VERIFY", "true")
+	os.Setenv("SMTP_HELLO", "my-hello")
 	defer func() {
 		os.Unsetenv("SMTP_PORT")
 		os.Unsetenv("NOTIFICATIONS_ENABLED")
+		os.Unsetenv("SMTP_WATCHERS")
+		os.Unsetenv("SMTP_TLS")
+		os.Unsetenv("SMTP_SKIP_VERIFY")
+		os.Unsetenv("SMTP_HELLO")
 	}()
 
 	cfg, err = Load(tmpfile.Name())
@@ -167,4 +180,15 @@ notifications:
 	if cfg.Notifications.Enabled {
 		t.Error("expected env overridden notifications.enabled to be false")
 	}
+	if len(cfg.Notifications.Watchers) != 2 || cfg.Notifications.Watchers[0] != "a@b.com" || cfg.Notifications.Watchers[1] != "c@d.com" {
+		t.Errorf("expected env overridden watchers [a@b.com, c@d.com], got %+v", cfg.Notifications.Watchers)
+	}
+	if cfg.Notifications.SMTP.TLS != "ssl" || !cfg.Notifications.SMTP.SkipVerify {
+		t.Errorf("expected env overridden tls and skip_verify, got %+v", cfg.Notifications.SMTP)
+	}
+	if cfg.Notifications.SMTP.Hello != "my-hello" {
+		t.Errorf("expected env overridden hello, got %s", cfg.Notifications.SMTP.Hello)
+	}
 }
+
+

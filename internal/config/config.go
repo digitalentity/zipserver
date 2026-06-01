@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,11 +29,14 @@ type CommentsConfig struct {
 }
 
 type SMTPConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	From     string `yaml:"from"`
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	From       string `yaml:"from"`
+	TLS        string `yaml:"tls"`         // "none", "starttls", "ssl", or empty (auto)
+	SkipVerify bool   `yaml:"skip_verify"` // true to skip TLS certificate verification
+	Hello      string `yaml:"hello"`       // HELO/EHLO hostname
 }
 
 type NotificationsConfig struct {
@@ -120,11 +124,30 @@ func Load(path string) (*Config, error) {
 	if os.Getenv("SMTP_FROM") != "" {
 		cfg.Notifications.SMTP.From = os.Getenv("SMTP_FROM")
 	}
+	if os.Getenv("SMTP_TLS") != "" {
+		cfg.Notifications.SMTP.TLS = os.Getenv("SMTP_TLS")
+	}
+	if os.Getenv("SMTP_SKIP_VERIFY") != "" {
+		cfg.Notifications.SMTP.SkipVerify = os.Getenv("SMTP_SKIP_VERIFY") == "true"
+	}
+	if os.Getenv("SMTP_HELLO") != "" {
+		cfg.Notifications.SMTP.Hello = os.Getenv("SMTP_HELLO")
+	}
 	if os.Getenv("BASE_URL") != "" {
 		cfg.Notifications.BaseURL = os.Getenv("BASE_URL")
 	}
 	if os.Getenv("NOTIFICATIONS_ENABLED") != "" {
 		cfg.Notifications.Enabled = os.Getenv("NOTIFICATIONS_ENABLED") == "true"
+	}
+	if os.Getenv("SMTP_WATCHERS") != "" {
+		var cleaned []string
+		for _, w := range strings.Split(os.Getenv("SMTP_WATCHERS"), ",") {
+			w = strings.TrimSpace(w)
+			if w != "" {
+				cleaned = append(cleaned, w)
+			}
+		}
+		cfg.Notifications.Watchers = cleaned
 	}
 
 	return &cfg, nil

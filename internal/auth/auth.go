@@ -19,6 +19,11 @@ import (
 
 const sessionName = "zipserver-session-v2"
 
+// IsSafeRedirect returns true for relative URLs that stay on the same origin.
+func IsSafeRedirect(u string) bool {
+	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") && !strings.HasPrefix(u, "/\\")
+}
+
 type Authenticator struct {
 	config       *oauth2.Config
 	store        *sessions.CookieStore
@@ -115,7 +120,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	redirect := r.URL.Query().Get("redirect")
-	if redirect != "" {
+	if redirect != "" && IsSafeRedirect(redirect) {
 		session.Values["next"] = redirect
 		session.Options.Secure = a.isSecure(r)
 		if err := session.Save(r, w); err != nil {
@@ -207,7 +212,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	slog.Info("user authenticated", "email", googleUser.Email, "name", googleUser.Name)
 
 	nextURL := "/"
-	if val, ok := session.Values["next"].(string); ok && val != "" {
+	if val, ok := session.Values["next"].(string); ok && IsSafeRedirect(val) {
 		nextURL = val
 		delete(session.Values, "next")
 	}
@@ -255,7 +260,7 @@ func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	redirect := r.URL.Query().Get("redirect")
-	if redirect == "" {
+	if !IsSafeRedirect(redirect) {
 		redirect = "/"
 	}
 	http.Redirect(w, r, redirect, http.StatusFound)

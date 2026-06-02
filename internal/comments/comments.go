@@ -345,9 +345,12 @@ func (s *JSONFileCommentStore) CreateComment(ctx context.Context, book, version,
 	var annos []Annotation
 
 	data, err := os.ReadFile(filePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
 	if err == nil {
 		if err := json.Unmarshal(data, &annos); err != nil {
-			slog.Warn("corrupted comment file, resetting", "file", filePath, "error", err)
+			return nil, fmt.Errorf("corrupted comment file %s: %w", filePath, err)
 		}
 	}
 

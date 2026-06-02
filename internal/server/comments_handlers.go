@@ -62,7 +62,8 @@ func (s *Server) HandleGetComments(w http.ResponseWriter, r *http.Request) {
 	book, version, innerPath, err := comments.ParsePageParam(pageParam)
 	if err != nil {
 		slog.Warn("failed to parse page parameter", "page", pageParam, "error", err)
-		http.Error(w, fmt.Sprintf(`{"error":"Invalid page parameter: %v"}`, err), http.StatusBadRequest)
+		errResp, _ := json.Marshal(map[string]string{"error": "Invalid page parameter: " + err.Error()})
+		http.Error(w, string(errResp), http.StatusBadRequest)
 		return
 	}
 
@@ -138,7 +139,8 @@ func (s *Server) HandleCreateComment(w http.ResponseWriter, r *http.Request) {
 		book, version, innerPath, err = comments.ParsePageParam(pageSource)
 		if err != nil {
 			slog.Warn("failed to parse page source", "source", pageSource, "error", err)
-			http.Error(w, fmt.Sprintf(`{"error":"Invalid target source/page: %v"}`, err), http.StatusBadRequest)
+			errResp, _ := json.Marshal(map[string]string{"error": "Invalid target source/page: " + err.Error()})
+			http.Error(w, string(errResp), http.StatusBadRequest)
 			return
 		}
 	}

@@ -83,14 +83,14 @@ func main() {
 		})
 		mux.HandleFunc("/_/login", func(w http.ResponseWriter, r *http.Request) {
 			redirect := r.URL.Query().Get("redirect")
-			if redirect == "" {
+			if !auth.IsSafeRedirect(redirect) {
 				redirect = "/"
 			}
 			http.Redirect(w, r, redirect, http.StatusFound)
 		})
 		mux.HandleFunc("/_/logout", func(w http.ResponseWriter, r *http.Request) {
 			redirect := r.URL.Query().Get("redirect")
-			if redirect == "" {
+			if !auth.IsSafeRedirect(redirect) {
 				redirect = "/"
 			}
 			http.Redirect(w, r, redirect, http.StatusFound)
@@ -141,6 +141,7 @@ func main() {
 		slog.Error("storage close failed", "error", err)
 	}
 }
+
 
 func uploadMiddleware(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

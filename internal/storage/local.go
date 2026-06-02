@@ -116,12 +116,24 @@ func (l *LocalStorage) UploadZip(ctx context.Context, book, version string, r io
 		return err
 	}
 
-	f, err := os.Create(path)
+	tmp, err := os.CreateTemp(bookDir, ".upload-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
 
-	_, err = io.Copy(f, r)
-	return err
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if _, err = io.Copy(tmp, r); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

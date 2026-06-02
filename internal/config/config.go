@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -111,9 +112,10 @@ func Load(path string) (*Config, error) {
 	}
 	if os.Getenv("SMTP_PORT") != "" {
 		port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
-		if err == nil {
-			cfg.Notifications.SMTP.Port = port
+		if err != nil {
+			return nil, fmt.Errorf("invalid SMTP_PORT %q: %w", os.Getenv("SMTP_PORT"), err)
 		}
+		cfg.Notifications.SMTP.Port = port
 	}
 	if os.Getenv("SMTP_USERNAME") != "" {
 		cfg.Notifications.SMTP.Username = os.Getenv("SMTP_USERNAME")

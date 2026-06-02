@@ -552,3 +552,47 @@ li .comment-paragraph-indicator::after {
 .comment-highlight-flash {
     animation: comment-flash-pulse 2s ease-out;
 }
+
+/* ==========================================
+ * 6. Mentions Autocomplete Dropdown
+ * ========================================== */
+.comments-autocomplete-dropdown {
+    position: fixed;
+    background-color: var(--theme-popup-bg, var(--bg));
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: 1050;
+    list-style: none;
+    padding: 4px 0;
+    margin: 0;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.comments-autocomplete-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    transition: background-color 0.15s;
+}
+
+.comments-autocomplete-item:hover,
+.comments-autocomplete-item.active {
+    background-color: var(--theme-hover, rgba(0, 0, 0, 0.05));
+    outline: none;
+}
+
+.comments-autocomplete-item .autocomplete-name {
+    font-weight: 600;
+}
+
+.comments-autocomplete-item .autocomplete-email {
+    font-size: 10px;
+    opacity: 0.6;
+}

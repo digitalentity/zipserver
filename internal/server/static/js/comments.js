@@ -21,6 +21,13 @@
     let sidebarElement = null;
     let currentOpenThreadId = null;
 
+    // Autocomplete references & state
+    let currentUser = null;
+    let autocompleteDropdown = null;
+    let activeDropdownIndex = 0;
+    let activeAutocompleteTextarea = null;
+    let activeMentionInfo = null;
+
     class CommentsAPI {
 
         static async getAnnotations() {
@@ -521,6 +528,9 @@
                 toggleSidebar();
             });
         }
+
+        sidebarElement.addEventListener('input', handleAutocompleteInput, true);
+        sidebarElement.addEventListener('keydown', handleAutocompleteKeydown, true);
     }
 
     function toggleSidebar() {
@@ -539,6 +549,7 @@
     function closeSidebar() {
         document.documentElement.classList.remove('comments-sidebar-open');
         currentOpenThreadId = null;
+        closeAutocomplete();
     }
 
     function focusThread(threadId) {
@@ -893,22 +904,250 @@
     }
 
     // ==========================================
+    // 7. Mentions Autocomplete Engine
+    // ==========================================
+    async function fetchCurrentUser() {
+        try {
+            const res = await fetch('/_/api/v1/auth/me');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                }
+            }
+        } catch (e) {
+            console.error('[Comments] Failed to fetch current user:', e);
+        }
+    }
+
+    function getAutocompleteCandidates() {
+        const candidates = new Map();
+        
+        // 1. Add current user
+        if (currentUser && currentUser.email) {
+            candidates.set(currentUser.email.toLowerCase(), {
+                name: currentUser.name,
+                email: currentUser.email
+            });
+        }
+
+        // 2. Add page commenters
+        annotationsList.forEach(anno => {
+            if (anno.creator && anno.creator.email) {
+                const email = anno.creator.email.toLowerCase();
+                if (!candidates.has(email)) {
+                    candidates.set(email, {
+                        name: anno.creator.name,
+                        email: anno.creator.email
+                    });
+                }
+            }
+        });
+
+        return Array.from(candidates.values());
+    }
+
+    function getActiveMentionQuery(textarea) {
+        const val = textarea.value;
+        const start = textarea.selectionStart;
+        
+        // Find the start of the current word by looking back
+        let wordStart = start;
+        while (wordStart > 0 && !/\s/.test(val[wordStart - 1])) {
+            wordStart--;
+        }
+        
+        const word = val.substring(wordStart, start);
+        if (word.startsWith('@')) {
+            return {
+                query: word.substring(1),
+                startIdx: wordStart,
+                endIdx: start
+            };
+        }
+        return null;
+    }
+
+    function handleAutocompleteInput(e) {
+        const textarea = e.target;
+        if (!textarea.classList.contains('reply-input') && textarea.id !== 'new-thread-text-input') {
+            return;
+        }
+
+        activeAutocompleteTextarea = textarea;
+        const mentionInfo = getActiveMentionQuery(textarea);
+        activeMentionInfo = mentionInfo;
+
+        if (!mentionInfo) {
+            closeAutocomplete();
+            return;
+        }
+
+        const query = mentionInfo.query.toLowerCase();
+        const candidates = getAutocompleteCandidates();
+        const matches = candidates.filter(c => 
+            (c.name && c.name.toLowerCase().includes(query)) || 
+            (c.email && c.email.toLowerCase().includes(query))
+        );
+
+        if (matches.length === 0) {
+            closeAutocomplete();
+            return;
+        }
+
+        renderAutocompleteDropdown(textarea, matches);
+    }
+
+    function renderAutocompleteDropdown(textarea, matches) {
+        if (!autocompleteDropdown) {
+            autocompleteDropdown = document.createElement('ul');
+            autocompleteDropdown.className = 'comments-autocomplete-dropdown';
+            document.body.appendChild(autocompleteDropdown);
+        }
+
+        autocompleteDropdown.innerHTML = '';
+        activeDropdownIndex = Math.min(activeDropdownIndex, matches.length - 1);
+        activeDropdownIndex = Math.max(0, activeDropdownIndex);
+
+        matches.forEach((candidate, idx) => {
+            const li = document.createElement('li');
+            li.className = 'comments-autocomplete-item';
+            if (idx === activeDropdownIndex) {
+                li.classList.add('active');
+            }
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'autocomplete-name';
+            nameSpan.textContent = candidate.name || 'Anonymous';
+
+            const emailSpan = document.createElement('span');
+            emailSpan.className = 'autocomplete-email';
+            emailSpan.textContent = candidate.email;
+
+            li.appendChild(nameSpan);
+            li.appendChild(emailSpan);
+
+            li.addEventListener('mousedown', (e) => {
+                // Use mousedown instead of click to fire before textarea blur
+                e.preventDefault();
+                e.stopPropagation();
+                selectAutocompleteCandidate(candidate);
+            });
+
+            autocompleteDropdown.appendChild(li);
+        });
+
+        const rect = textarea.getBoundingClientRect();
+        autocompleteDropdown.style.top = `${rect.bottom}px`;
+        autocompleteDropdown.style.left = `${rect.left}px`;
+        autocompleteDropdown.style.width = `${rect.width}px`;
+        autocompleteDropdown.style.display = 'block';
+
+        autocompleteDropdown.dataset.matches = JSON.stringify(matches);
+    }
+
+    function handleAutocompleteKeydown(e) {
+        if (!autocompleteDropdown || autocompleteDropdown.style.display === 'none') {
+            return;
+        }
+
+        const matches = JSON.parse(autocompleteDropdown.dataset.matches || '[]');
+        if (matches.length === 0) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            e.stopPropagation();
+            activeDropdownIndex = (activeDropdownIndex + 1) % matches.length;
+            updateActiveAutocompleteItem();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            e.stopPropagation();
+            activeDropdownIndex = (activeDropdownIndex - 1 + matches.length) % matches.length;
+            updateActiveAutocompleteItem();
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            e.stopPropagation();
+            selectAutocompleteCandidate(matches[activeDropdownIndex]);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAutocomplete();
+        }
+    }
+
+    function updateActiveAutocompleteItem() {
+        if (!autocompleteDropdown) return;
+        const items = autocompleteDropdown.querySelectorAll('.comments-autocomplete-item');
+        items.forEach((item, idx) => {
+            if (idx === activeDropdownIndex) {
+                item.classList.add('active');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+
+    function selectAutocompleteCandidate(candidate) {
+        if (!activeAutocompleteTextarea || !activeMentionInfo) return;
+        
+        const textarea = activeAutocompleteTextarea;
+        const val = textarea.value;
+        const start = activeMentionInfo.startIdx;
+        const end = activeMentionInfo.endIdx;
+        const insertedText = `@${candidate.email} `;
+
+        textarea.value = val.substring(0, start) + insertedText + val.substring(end);
+        
+        const newCursorPos = start + insertedText.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        
+        closeAutocomplete();
+        textarea.focus();
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function closeAutocomplete() {
+        if (autocompleteDropdown) {
+            autocompleteDropdown.style.display = 'none';
+        }
+        activeDropdownIndex = 0;
+        activeMentionInfo = null;
+    }
+
+    // Close autocomplete on click outside, window resize, or escape
+    document.addEventListener('click', (e) => {
+        if (autocompleteDropdown && !autocompleteDropdown.contains(e.target) && e.target !== activeAutocompleteTextarea) {
+            closeAutocomplete();
+        }
+    });
+
+    window.addEventListener('resize', closeAutocomplete);
+
+    // ==========================================
     // 8. Bootstrap initialization
     // ==========================================
     async function boot() {
-        // 1. Fetch Page Comments
+        // Fetch current user and page comments
+        await fetchCurrentUser();
         annotationsList = await CommentsAPI.getAnnotations();
 
-        // 3. Setup UI layouts
+        // Setup UI layouts
         initSidebar();
         initSelectionTracker();
         initHighlightClickListener();
         initParagraphIndicators();
 
-        // 4. Apply range highlights
+        // Close autocomplete when scrolling sidebar content
+        const sidebarContent = document.getElementById('comments-sidebar-content');
+        if (sidebarContent) {
+            sidebarContent.addEventListener('scroll', closeAutocomplete);
+        }
+
+        // Apply range highlights
         applyPageHighlights();
 
-        // 5. Open sidebar automatically if there are unresolved parent comments
+        // Open sidebar automatically if there are unresolved parent comments
         const hasUnresolved = annotationsList.some(a => a.target && typeof a.target === 'object' && !a.resolved);
         if (hasUnresolved) {
             openSidebar();

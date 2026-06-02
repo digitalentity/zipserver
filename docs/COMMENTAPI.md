@@ -19,7 +19,8 @@ Check if the user is logged in.
       "user": {
         "id": "usr_902183",
         "name": "Alex Mercer",
-        "avatarUrl": "https://avatars.githubusercontent.com/u/102938"
+        "avatarUrl": "https://avatars.githubusercontent.com/u/102938",
+        "email": "alex.mercer@example.com"
       }
     }
     ```
@@ -122,7 +123,7 @@ The backend only needs to implement **four REST endpoints** to support the custo
 Retrieve all annotations (both parent threads and replies) for a specific page.
 
 *   **Query Parameters:**
-    *   `page` (string, required): The relative path of the page (e.g. `/system/architecture.html`).
+*   `page` (string, required): The relative path of the page (e.g. `/system/architecture.html`).
 *   **Response (200 OK):**
     Returns an array of W3C Annotation objects. The client script will dynamically group replies with their parent annotations.
 
@@ -163,3 +164,15 @@ Edit comment text or resolve/reopen a thread.
 Delete an annotation (only allowed if the active user matches the creator ID).
 
 *   **Response (204 No Content):** Successful deletion. If it was a parent annotation, the backend should also delete (cascade) all reply annotations targeting it.
+
+---
+
+## 4. Mentions Autocomplete & Candidates Resolution
+
+No additional database-backed search endpoints are required. Instead, autocompletion candidates are compiled client-side in the browser from existing endpoints:
+
+1.  **Current User Info:** Extracted from the `GET /_/api/v1/auth/me` endpoint.
+2.  **Page Participants:** Extracted from the array of existing annotations returned by `GET /_/api/v1/comments?page=...`. The client builds a set of unique users using the `creator.name` and `creator.email` fields.
+
+When a user types `@` inside the comment/reply fields, matching user suggestions are filtered using both the email and name properties of these candidate sources.
+

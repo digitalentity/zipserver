@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"zipserver/internal/comments"
@@ -26,6 +27,10 @@ func TestGetNotificationRecipients(t *testing.T) {
 				Email: "replier1@example.com",
 			},
 		},
+	}
+
+	isAllowedUser := func(email string) bool {
+		return strings.HasSuffix(email, "@example.com")
 	}
 
 	tests := []struct {
@@ -86,11 +91,93 @@ func TestGetNotificationRecipients(t *testing.T) {
 				"watch@example.com",
 			},
 		},
+		{
+			name: "New root comment with valid mention - notifies watchers and mentioned user",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Hey @mentioned@example.com could you check this?",
+				},
+			},
+			expected: []string{"admin@example.com", "watch@example.com", "mentioned@example.com"},
+		},
+		{
+			name: "New root comment with duplicate mentions - notifies mentioned user only once",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Hey @mentioned@example.com and again @mentioned@example.com",
+				},
+			},
+			expected: []string{"admin@example.com", "watch@example.com", "mentioned@example.com"},
+		},
+		{
+			name: "New root comment with self mention - excludes creator from notifications",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Self mention here @newuser@example.com",
+				},
+			},
+			expected: []string{"admin@example.com", "watch@example.com"},
+		},
+		{
+			name: "New root comment with unauthorized mention - filters out unauthorized email",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Check this out @spammer@blocked.com and @mentioned@example.com",
+				},
+			},
+			expected: []string{"admin@example.com", "watch@example.com", "mentioned@example.com"},
+		},
+		{
+			name: "New root comment with over 10 mentions - caps at 10 unique mentions",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Hey @m1@example.com @m2@example.com @m3@example.com @m4@example.com @m5@example.com @m6@example.com @m7@example.com @m8@example.com @m9@example.com @m10@example.com @m11@example.com @m12@example.com",
+				},
+			},
+			expected: []string{
+				"admin@example.com", "watch@example.com",
+				"m1@example.com", "m2@example.com", "m3@example.com", "m4@example.com", "m5@example.com",
+				"m6@example.com", "m7@example.com", "m8@example.com", "m9@example.com", "m10@example.com",
+			},
+		},
+		{
+			name: "Mentions inside normal text words are ignored",
+			newAnno: comments.Annotation{
+				ID: "new_root",
+				Creator: comments.Creator{
+					Email: "newuser@example.com",
+				},
+				Body: comments.TextualBody{
+					Value: "Contact support at help@example.com or user@example.com@invalid.com or text@abc@example.com",
+				},
+			},
+			expected: []string{"admin@example.com", "watch@example.com"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetNotificationRecipients(tt.newAnno, pageComments, watchers)
+			got := GetNotificationRecipients(tt.newAnno, pageComments, watchers, isAllowedUser)
 			sort.Strings(got)
 			sort.Strings(tt.expected)
 
@@ -105,3 +192,4 @@ func TestGetNotificationRecipients(t *testing.T) {
 		})
 	}
 }
+

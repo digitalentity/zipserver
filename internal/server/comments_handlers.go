@@ -288,7 +288,16 @@ func (s *Server) sendCommentNotification(anno comments.Annotation) {
 		return
 	}
 
-	recipients := notifications.GetNotificationRecipients(anno, pageComments, s.notifications.Watchers)
+	var isAllowedUser func(string) bool
+	if s.auth != nil {
+		isAllowedUser = s.auth.IsUserAllowed
+	} else {
+		isAllowedUser = func(email string) bool {
+			return true
+		}
+	}
+
+	recipients := notifications.GetNotificationRecipients(anno, pageComments, s.notifications.Watchers, isAllowedUser)
 	slog.Info("notification recipients calculated",
 		"comment_id", anno.ID,
 		"recipient_count", len(recipients),

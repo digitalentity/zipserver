@@ -8,15 +8,12 @@ Zipserver is a simple Go application designed to serve static content (like `mdb
 
 - **Hierarchical Content:** Organize content by `Book` and `Version`.
 - **Latest Version Support:** Permanent links to the most recently uploaded version of any book.
-- **Multi-Cloud Storage:**
-  - **Local Filesystem:** Simple directory-based storage.
-  - **Google Cloud Storage (GCS):** Serve from buckets with range-request optimization.
-  - **Google Drive:** Serve from Drive folders using IDs or names.
-- **Smart Local Caching:** Cloud-hosted zips are cached locally for near-instant access.
-- **In-Memory Meta Caching:** Book and version lists are cached in memory with a configurable TTL to prevent backend rate limiting.
+- **Filesystem Storage:** Content is served from zip archives in a local directory (`zip_dir`).
 - **Zero-Extraction Serving:** Content is streamed directly from zip files without unzipping to disk.
 - **Authenticated Uploads:** Dedicated `/_/upload` endpoint secured by Bearer tokens for CI/CD integration.
 - **Web UI Authentication:** Integrated Google OAuth 2.0 with domain/user allow-listing.
+- **Comments & Annotations:** W3C Web Annotation-compliant commenting, highlighting, and threaded replies, persisted per book/version.
+- **Email Notifications:** Optional SMTP notifications to global watchers, thread participants, and `@email` mentions on new comments.
 - **Modern Architecture:** Modular Go implementation with dependency injection and clean separation of concerns.
 
 ## URL & API Endpoints
@@ -173,51 +170,67 @@ Zipserver can be configured via `config.yaml` or Environment Variables.
 
 ### Environment Variables
 Environment variables take precedence over the YAML file:
-- `GOOGLE_CLIENT_ID`: OAuth Client ID
-- `GOOGLE_CLIENT_SECRET`: OAuth Client Secret
-- `GOOGLE_REDIRECT_URL`: OAuth Callback URL (e.g., `http://localhost:8080/_/callback`)
+- `PORT`: HTTP listen port
+- `ZIP_DIR`: Directory containing book/version zip archives
+- `COMMENTS_DIR`: Directory for comment storage
+- `COMMENTS_SCOPE`: `version` or `book`
+- `AUTH_ENABLED`: `true` / `false`
 - `SESSION_KEY`: Gorilla Sessions key
+- `COOKIE_SECURE`: `true` / `false` (set `false` behind a TLS-terminating proxy)
 - `UPLOAD_TOKEN`: Token for the `/_/upload` endpoint
+- `NOTIFICATIONS_ENABLED`: `true` / `false`
+- `BASE_URL`: Public base URL used in notification links
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS`, `SMTP_SKIP_VERIFY`, `SMTP_HELLO`: SMTP delivery settings
+- `SMTP_WATCHERS`: Comma-separated list of watcher email addresses
+
+> Note: OAuth `client_id`, `client_secret`, and `redirect_url` are configured via `config.yaml` only.
 
 ### config.yaml Example
 ```yaml
 port: "8080"
-storage_type: "gcs" # "local", "gcs", or "drive"
-
-# Caching settings
-cache:
-  dir: "./cache"   # Local disk cache for zips
-  ttl: "5m"        # In-memory TTL for metadata (book/version lists)
-
-# Backend specific settings
-gcs:
-  bucket: "my-docs-bucket"
-  credentials_file: "gcs-sa.json" # Optional
-
-drive:
-  folder_id: "1abc...xyz"
-  credentials_file: "drive-sa.json" # Optional
+zip_dir: "./publish"
 
 auth:
   enabled: true
-  client_id: "..."
-  client_secret: "..."
+  client_id: "YOUR_GOOGLE_CLIENT_ID"
+  client_secret: "YOUR_GOOGLE_CLIENT_SECRET"
   redirect_url: "http://localhost:8080/_/callback"
   allowed_users:
-    - "*@my-company.com"
-  session_key: "change-me-to-something-random"
+    - "*@company.com"
+    - "user@thirdparty.com"
+  session_key: "super-secret-session-key"
+  # cookie_secure: false # Set false if running behind an HTTP reverse proxy that terminates TLS
 
 upload:
   enabled: true
-  token: "your-secret-token"
+  token: "your-secret-upload-token" # for Bearer authentication
+
+comments:
+  dir: "./comments"
+  scope: "version" # "version" (comments per version) or "book" (shared across versions)
+
+notifications:
+  enabled: true
+  base_url: "http://localhost:8080"
+  smtp:
+    host: "smtp.example.com"
+    port: 587
+    username: "noreply@example.com"
+    password: "smtp-password"
+    from: "Zipserver <noreply@example.com>"
+    tls: "starttls" # "none", "starttls", "ssl" (implicit TLS), or empty for port-based auto-detection
+    skip_verify: false # true to bypass certificate verification (e.g. self-signed certs)
+    hello: "" # HELO/EHLO hostname; if empty, auto-detected from base_url or sender email
+  watchers:
+    - "admin@example.com"
 ```
 
 ## Getting Started
 
 ### Prerequisites
 - Go 1.25 or higher.
-- A Google Cloud Project with OAuth configured (for Web UI).
-- Service Account credentials (for GCS/Drive).
+- A Google Cloud Project with OAuth configured (for Web UI authentication).
+- An SMTP server (optional, for email notifications).
 
 ### Building and Running
 ```bash

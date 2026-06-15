@@ -342,3 +342,30 @@ func (s *Server) serveFromZip(w http.ResponseWriter, r *http.Request, book, vers
 		slog.Error("error streaming file from zip", "error", err, "book", book, "version", version, "path", innerPath)
 	}
 }
+
+func (s *Server) HandleGetLatestBookVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	book := r.PathValue("book")
+	if book == "" {
+		http.Error(w, `{"error":"Missing book parameter"}`, http.StatusBadRequest)
+		return
+	}
+
+	latest, err := s.getLatestVersion(r.Context(), book)
+	if err != nil {
+		slog.Error("failed to get latest version", "book", book, "error", err)
+		http.Error(w, `{"error":"Internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if latest == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"latestVersion": latest,
+	})
+}
+

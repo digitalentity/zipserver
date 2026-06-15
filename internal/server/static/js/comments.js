@@ -1125,9 +1125,141 @@
     window.addEventListener('resize', closeAutocomplete);
 
     // ==========================================
-    // 8. Bootstrap initialization
+    // 8. Book Version Checking & Banner
+    // ==========================================
+    async function checkBookVersion() {
+        const path = window.location.pathname;
+        const parts = path.split('/');
+        if (parts.length < 3) return;
+
+        const book = parts[1];
+        const currentVersion = parts[2];
+        if (!book || !currentVersion || book === '_' || book === 'api') return;
+
+        try {
+            const res = await fetch(`/_/api/v1/books/${encodeURIComponent(book)}/latest`);
+            if (!res.ok) return;
+
+            const data = await res.json();
+            const latestVersion = data.latestVersion;
+
+            if (latestVersion && latestVersion !== currentVersion) {
+                showLatestVersionBanner(book, latestVersion, parts.slice(3).join('/'));
+            }
+        } catch (e) {
+            console.error('[Comments] Failed to check book version:', e);
+        }
+    }
+
+    function showLatestVersionBanner(book, latestVersion, innerPath) {
+        if (document.getElementById('zipserver-latest-version-banner')) return;
+
+        const banner = document.createElement('div');
+        banner.id = 'zipserver-latest-version-banner';
+        
+        let latestLink = `/${encodeURIComponent(book)}/latest/${innerPath}`;
+        if (window.location.search) {
+            latestLink += window.location.search;
+        }
+
+        banner.innerHTML = `
+            <style>
+                #zipserver-latest-version-banner {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    z-index: 2147483647;
+                    background: rgba(15, 23, 42, 0.95);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    color: #f8fafc;
+                    font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+                    padding: 12px 24px;
+                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                    box-sizing: border-box;
+                    line-height: 1.5;
+                    animation: zipserverSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+                }
+                #zipserver-latest-version-banner * {
+                    box-sizing: border-box;
+                }
+                @keyframes zipserverSlideDown {
+                    from { transform: translateY(-100%); }
+                    to { transform: translateY(0); }
+                }
+                .zipserver-banner-btn {
+                    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+                    color: #ffffff !important;
+                    text-decoration: none !important;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 14px;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+                    display: inline-block;
+                    white-space: nowrap;
+                }
+                .zipserver-banner-btn:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 6px 12px -1px rgba(99, 102, 241, 0.3), 0 2px 4px -1px rgba(99, 102, 241, 0.3);
+                    filter: brightness(1.1);
+                }
+                .zipserver-banner-btn:active {
+                    transform: translateY(0);
+                }
+                html {
+                    margin-top: 60px !important;
+                }
+                @media (max-width: 600px) {
+                    #zipserver-latest-version-banner {
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 8px;
+                        padding: 12px 16px;
+                    }
+                    html {
+                        margin-top: 90px !important;
+                    }
+                }
+            </style>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span style="font-size: 15px; font-weight: 500; letter-spacing: -0.01em;">
+                    A newer version of this book is available (<strong>${escapeHtml(latestVersion)}</strong>).
+                </span>
+            </div>
+            <a href="${escapeHtml(latestLink)}" class="zipserver-banner-btn">View Latest Version</a>
+        `;
+        document.body.appendChild(banner);
+    }
+
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // ==========================================
+    // 9. Bootstrap initialization
     // ==========================================
     async function boot() {
+        // Check if there is a newer version of the book
+        await checkBookVersion();
+
         // Fetch current user and page comments
         await fetchCurrentUser();
         annotationsList = await CommentsAPI.getAnnotations();

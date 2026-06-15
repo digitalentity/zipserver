@@ -62,6 +62,7 @@ func main() {
 	mux.HandleFunc("PATCH /_/api/v1/comments/{id}", srv.HandleUpdateComment)
 	mux.HandleFunc("DELETE /_/api/v1/comments/{id}", srv.HandleDeleteComment)
 	mux.HandleFunc("GET /_/static/", srv.HandleStatic)
+	mux.HandleFunc("GET /_/api/v1/books/{book}/latest", srv.HandleGetLatestBookVersion)
 
 	if authenticator != nil {
 		mux.HandleFunc("/_/login", authenticator.HandleLogin)

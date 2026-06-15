@@ -234,3 +234,63 @@ func TestHandleStatic(t *testing.T) {
 	}
 }
 
+func TestHandleGetLatestBookVersion(t *testing.T) {
+	now := time.Now()
+	m := &mockStorage{
+		versions: []storage.VersionInfo{
+			{Name: "v1", Time: now.Add(-1 * time.Hour)},
+			{Name: "v2", Time: now},
+		},
+	}
+	srv, _ := NewServer(nil, m, nil, nil)
+
+	tests := []struct {
+		name       string
+		book       string
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			"Success",
+			"book1",
+			http.StatusOK,
+			`{"latestVersion":"v2"}`,
+		},
+		{
+			"No versions",
+			"emptybook",
+			http.StatusNotFound,
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.book == "emptybook" {
+				srv.storage = &mockStorage{versions: []storage.VersionInfo{}}
+			} else {
+				srv.storage = m
+			}
+			req := httptest.NewRequest("GET", "/_/api/v1/books/"+tt.book+"/latest", nil)
+			req.SetPathValue("book", tt.book)
+			rr := httptest.NewRecorder()
+			srv.HandleGetLatestBookVersion(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("expected status %d, got %d", tt.wantStatus, rr.Code)
+			}
+
+			if tt.wantStatus == http.StatusOK {
+				gotBody := strings.TrimSpace(rr.Body.String())
+				if gotBody != tt.wantBody {
+					t.Errorf("expected body %q, got %q", tt.wantBody, gotBody)
+				}
+				if gotType := rr.Header().Get("Content-Type"); gotType != "application/json" {
+					t.Errorf("expected Content-Type application/json, got %q", gotType)
+				}
+			}
+		})
+	}
+}
+
+

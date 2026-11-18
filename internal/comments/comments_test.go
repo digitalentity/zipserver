@@ -50,6 +50,31 @@ func TestParsePageParam(t *testing.T) {
 			expectErr: false,
 		},
 		{
+			input:     "/mybook/v1.0%2Bbuild1/intro.html",
+			wantBook:  "mybook",
+			wantVer:   "v1.0+build1",
+			wantPath:  "intro.html",
+			expectErr: false,
+		},
+		{
+			input:     "/mybook/v1.0/chapter/",
+			wantBook:  "mybook",
+			wantVer:   "v1.0",
+			wantPath:  "chapter/index.html",
+			expectErr: false,
+		},
+		{
+			input:     "/mybook/v1.0/intro.html?highlight=foo#bar",
+			wantBook:  "mybook",
+			wantVer:   "v1.0",
+			wantPath:  "intro.html",
+			expectErr: false,
+		},
+		{
+			input:     "/mybook/%2e%2e/etc/passwd",
+			expectErr: true,
+		},
+		{
 			input:     "/_/login",
 			expectErr: true,
 		},

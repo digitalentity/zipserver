@@ -119,24 +119,27 @@ func ParsePageParam(pageParam string) (book, version, innerPath string, err erro
 		return "", "", "", fmt.Errorf("page parameter must not contain ..")
 	}
 
-	p := pageParam
-	if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
-		u, err := url.Parse(p)
-		if err != nil {
-			return "", "", "", fmt.Errorf("invalid page URL: %w", err)
-		}
-		p = u.Path
+	u, err := url.Parse(pageParam)
+	if err != nil {
+		return "", "", "", fmt.Errorf("invalid page url: %w", err)
 	}
 
-	p = path.Clean(p)
-	p = strings.Trim(p, "/")
+	unescaped, err := url.PathUnescape(u.Path)
+	if err != nil {
+		return "", "", "", fmt.Errorf("invalid page path encoding: %w", err)
+	}
+	if strings.Contains(unescaped, "..") {
+		return "", "", "", fmt.Errorf("page parameter must not contain ..")
+	}
 
-	parts := strings.Split(p, "/")
+	hadTrailingSlash := strings.HasSuffix(unescaped, "/")
+	cleaned := strings.Trim(path.Clean(unescaped), "/")
+	parts := strings.Split(cleaned, "/")
 	if len(parts) == 0 || parts[0] == "" {
 		return "", "", "", fmt.Errorf("invalid page path structure")
 	}
 
-	// Filter system paths
+	// Filter system paths.
 	if parts[0] == "_" || parts[0] == "api" {
 		return "", "", "", fmt.Errorf("system path not commentable")
 	}
@@ -146,10 +149,8 @@ func ParsePageParam(pageParam string) (book, version, innerPath string, err erro
 		return "", "", "", fmt.Errorf("invalid book name: %w", err)
 	}
 	if len(parts) == 1 {
-		// Book level index (e.g. /mybook/) -> default to latest/index.html
-		version = "latest"
-		innerPath = "index.html"
-		return book, version, innerPath, nil
+		// Book-level index (e.g. /mybook/) defaults to latest/index.html.
+		return book, "latest", "index.html", nil
 	}
 
 	version = parts[1]
@@ -157,9 +158,12 @@ func ParsePageParam(pageParam string) (book, version, innerPath string, err erro
 		return "", "", "", fmt.Errorf("invalid version name: %w", err)
 	}
 	if len(parts) == 2 {
-		innerPath = "index.html"
-	} else {
-		innerPath = strings.Join(parts[2:], "/")
+		return book, version, "index.html", nil
+	}
+
+	innerPath = strings.Join(parts[2:], "/")
+	if hadTrailingSlash && innerPath != "index.html" && !strings.HasSuffix(innerPath, "/index.html") {
+		innerPath += "/index.html"
 	}
 
 	return book, version, innerPath, nil

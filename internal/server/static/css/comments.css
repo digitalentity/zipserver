@@ -3,10 +3,15 @@
  * indicators, and inline highlight colors integrated with mdbook's active themes.
  */
 
+:root {
+    --zipserver-banner-offset: 0px;
+}
+
 /* ==========================================
  * 1. Page Layout Shift when Sidebar Open
  * ========================================== */
-html.comments-sidebar-open #mdbook-page-wrapper {
+html.comments-sidebar-open #mdbook-page-wrapper,
+html.comments-sidebar-open #page-wrapper {
     margin-right: 380px;
     transition: margin-right 0.3s ease;
 }
@@ -17,7 +22,8 @@ html.comments-sidebar-open .nav-wide-wrapper {
 }
 
 @media only screen and (max-width: 1200px) {
-    html.comments-sidebar-open #mdbook-page-wrapper {
+    html.comments-sidebar-open #mdbook-page-wrapper,
+    html.comments-sidebar-open #page-wrapper {
         margin-right: 0;
     }
     html.comments-sidebar-open .nav-wide-wrapper {
@@ -30,7 +36,7 @@ html.comments-sidebar-open .nav-wide-wrapper {
  * ========================================== */
 .comment-sidebar {
     position: fixed;
-    top: 50px; /* mdbook header menu-bar height is 50px */
+    top: calc(50px + var(--zipserver-banner-offset, 0px)); /* mdbook header menu-bar height is 50px */
     right: -380px;
     bottom: 0;
     width: 380px;
@@ -389,30 +395,35 @@ html.comments-sidebar-open .comment-sidebar {
  * 5. In-page Highlights & Controls overlays
  * ========================================== */
 
-/* Range Highlight style (mark.js wrapped spans) */
+/* Range Highlight style (wrapped <mark> elements) */
+mark.comment-highlight,
 .comment-highlight {
-    background-color: rgba(31, 128, 130, 0.22) !important;
+    background-color: rgba(31, 128, 130, 0.22);
+    color: inherit;
     border-bottom: 1px dashed var(--links);
     cursor: pointer;
     transition: background-color 0.2s ease;
 }
 
+mark.comment-highlight:hover,
 .comment-highlight:hover {
-    background-color: rgba(31, 128, 130, 0.38) !important;
+    background-color: rgba(31, 128, 130, 0.38);
 }
 
+mark.comment-highlight.resolved-highlight,
 .resolved-highlight {
-    background-color: rgba(128, 128, 128, 0.12) !important;
-    border-bottom: 1px dashed rgba(128, 128, 128, 0.5) !important;
+    background-color: rgba(128, 128, 128, 0.12);
+    border-bottom: 1px dashed rgba(128, 128, 128, 0.5);
 }
 
+mark.comment-highlight.resolved-highlight:hover,
 .resolved-highlight:hover {
-    background-color: rgba(128, 128, 128, 0.24) !important;
+    background-color: rgba(128, 128, 128, 0.24);
 }
 
 /* Popover add-comment button */
 .comment-popover {
-    position: absolute;
+    position: fixed;
     transform: translate(-50%, -100%);
     background-color: var(--links);
     color: #ffffff;
@@ -422,7 +433,7 @@ html.comments-sidebar-open .comment-sidebar {
     border-radius: 20px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     cursor: pointer;
-    z-index: 2000;
+    z-index: 2100;
     user-select: none;
     transition: transform 0.1s;
 }
@@ -462,8 +473,7 @@ html.comments-sidebar-open .comment-sidebar {
 }
 
 /* Show indicator when block is hovered */
-#mdbook-content main > *:hover > .comment-paragraph-indicator,
-#mdbook-content main li:hover > .comment-paragraph-indicator {
+.comment-annotatable-block:hover > .comment-paragraph-indicator {
     opacity: 0.35;
     pointer-events: auto;
 }
@@ -514,26 +524,30 @@ li .comment-paragraph-indicator::after {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-/* Section-level Highlight Styles (for block elements like P, H1-H6, blockquote, pre) */
-.comment-section-highlight {
-    background-color: rgba(31, 128, 130, 0.08) !important;
-    border-left: 3px solid var(--links) !important;
-    padding-left: 8px !important;
+/* Section-level Highlight Styles (for block elements like P, H1-H6, blockquote, pre, li) */
+.comment-section-highlight,
+.comment-section-highlight.comment-highlight {
+    background-color: rgba(31, 128, 130, 0.08);
+    border-left: 3px solid var(--links);
+    padding-left: 8px;
     cursor: pointer;
     transition: background-color 0.2s ease;
 }
 
-.comment-section-highlight:hover {
-    background-color: rgba(31, 128, 130, 0.16) !important;
+.comment-section-highlight:hover,
+.comment-section-highlight.comment-highlight:hover {
+    background-color: rgba(31, 128, 130, 0.16);
 }
 
-.comment-section-highlight.resolved-highlight {
-    background-color: rgba(128, 128, 128, 0.04) !important;
-    border-left: 3px solid rgba(128, 128, 128, 0.4) !important;
+.comment-section-highlight.resolved-highlight,
+.comment-section-highlight.comment-highlight.resolved-highlight {
+    background-color: rgba(128, 128, 128, 0.04);
+    border-left: 3px solid rgba(128, 128, 128, 0.4);
 }
 
-.comment-section-highlight.resolved-highlight:hover {
-    background-color: rgba(128, 128, 128, 0.1) !important;
+.comment-section-highlight.resolved-highlight:hover,
+.comment-section-highlight.comment-highlight.resolved-highlight:hover {
+    background-color: rgba(128, 128, 128, 0.1);
 }
 
 /* Flash animation when focusing/navigating to a comment on the page */
@@ -541,7 +555,7 @@ li .comment-paragraph-indicator::after {
     0% {
         outline: 3px solid var(--links);
         outline-offset: 2px;
-        background-color: rgba(255, 215, 0, 0.6) !important;
+        background-color: rgba(255, 215, 0, 0.55);
     }
     100% {
         outline: 3px solid transparent;
@@ -549,6 +563,8 @@ li .comment-paragraph-indicator::after {
     }
 }
 
+mark.comment-highlight.comment-highlight-flash,
+.comment-section-highlight.comment-highlight-flash,
 .comment-highlight-flash {
     animation: comment-flash-pulse 2s ease-out;
 }

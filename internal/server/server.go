@@ -100,6 +100,8 @@ func NewServer(cfg *config.Config, s storage.Storage, c comments.CommentStore, a
 }
 
 func (s *Server) HandleStatic(w http.ResponseWriter, r *http.Request) {
+	// Ensure clients revalidate embedded comment assets after server upgrades.
+	w.Header().Set("Cache-Control", "no-cache")
 	s.staticHandler.ServeHTTP(w, r)
 }
 

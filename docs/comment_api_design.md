@@ -195,17 +195,17 @@ graph TD
     An asynchronous JavaScript utility class interfacing with Zipserver REST endpoints (`GET`, `POST`, `PATCH`, `DELETE` operations mapped to `/_/api/v1/comments/*`).
 
 2.  **Anchor Selection Engine**:
-    To robustly preserve annotations across content updates, target elements are referenced dynamically:
-    -   **Multi-Stage Fallback Selector**: Looks up block elements using a sequence of matches:
-        1.  Exact index check matching the stored paragraph SHA-256 hash.
-        2.  Global DOM scan matching the SHA-256 hash.
-        3.  Index check matching the tagName.
-        4.  Neighborhood scan (offsets $\pm 5$ blocks) searching for matching tagName.
-        5.  Global DOM scan fallback for tagName.
-    -   **TreeWalker Offsets**: Tracks precise range positions within block nodes utilizing standard `document.createTreeWalker` to sum up character lengths across nested text nodes safely.
+    To robustly preserve annotations across content updates (including tables, lists, nested paragraphs, code blocks, and both mdBook 0.4/0.5 DOM wrappers), target elements are resolved dynamically:
+    -   **Unified Block & Text Discovery**: Enumerates structural blocks (`p`, `li`, `td`, `th`, `tr`, `table`, `ul`, `ol`, `dl`, `dt`, `dd`, `h1`–`h6`, `pre`, `blockquote`) inside `#mdbook-content main` / `#content main` while ignoring UI overlays (`.comment-paragraph-indicator`, `<pre>` copy buttons) and Mermaid diagrams.
+    -   **Multi-Stage W3C Anchor Resolver**: Resolves quote-backed selections and section-level annotations in order:
+        1.  Exact `blockIdx` + normalized `blockHash` + `TextQuoteSelector` / `TextPositionSelector`.
+        2.  Global DOM scan matching `blockHash` + quote/position verification.
+        3.  `blockIdx` + `tagName` + quote match.
+        4.  Global `TextQuoteSelector` scan (preferring innermost matching blocks over outer table/list containers, disambiguated by `prefix`/`suffix` and position proximity) or `±5` neighborhood scan for section-level annotations.
+    -   **Range-Aware TreeWalker Offsets**: Computes character offsets via `Range.comparePoint` over clean block text nodes so double-click, triple-click, and inline-markup selections stay aligned.
 
-3.  **In-Page Highlighting Loader**:
-    -   Integrated with `mark.js` (distributed with mdbook) to handle sub-string range selections.
+3.  **Pure-DOM In-Page Highlighting Loader**:
+    -   Wraps target text ranges directly into `<mark class="comment-highlight">` elements using `Text.splitText` without relying on `mark.js` (avoiding lazy-load races and interference with mdBook search `unmark()`), and tracks anchored DOM elements per thread ID for reliable click-to-scroll and flash animations.
     -   Applies distinct styling classes: `.comment-highlight` (default active highlights) and `.resolved-highlight` (unobtrusive gray styling for resolved threads).
     -   Serves block-level annotations by applying `.comment-section-highlight` directly to structural block containers.
 

@@ -222,6 +222,9 @@ func TestHandleStatic(t *testing.T) {
 			}
 
 			if tt.wantStatus == http.StatusOK {
+				if gotCache := rr.Header().Get("Cache-Control"); gotCache != "no-cache" {
+					t.Errorf("expected Cache-Control %q, got %q", "no-cache", gotCache)
+				}
 				gotType := rr.Header().Get("Content-Type")
 				if !strings.HasPrefix(gotType, tt.wantType) {
 					t.Errorf("expected type prefix %q, got %q", tt.wantType, gotType)

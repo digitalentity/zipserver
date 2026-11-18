@@ -1,9 +1,9 @@
 /**
  * Custom Comments Integration - W3C Web Annotation Compliant Engine
  * 
- * Uses mark.js (bundled with mdbook) for range highlighting, and implements
- * an in-page sliding sidebar for multi-user threads, replies, resolve state,
- * and deletion permissions.
+ * Implements pure-DOM W3C TextQuote/TextPosition/Fragment anchoring and range
+ * highlighting, along with an in-page sliding sidebar for multi-user threads,
+ * replies, resolve state, and deletion permissions.
  */
 (function() {
     'use strict';
@@ -15,6 +15,7 @@
     
     let annotationsList = []; // Holds all annotations for the current page
     let activeSelection = null; // Holds the current selected range anchor data
+    let threadAnchorElements = new Map(); // Maps thread ID -> array of highlighted DOM elements
 
     // UI references
     let popoverElement = null;
@@ -84,139 +85,439 @@
     // ==========================================
     // 3. Anchor & Selection Engine
     // ==========================================
+    const BLOCK_SELECTOR = 'p, li, td, th, tr, table, ul, ol, dl, dt, dd, h1, h2, h3, h4, h5, h6, pre, blockquote';
+    const BLOCK_TAG_SET = new Set([
+        'P', 'LI', 'TD', 'TH', 'TR', 'TABLE', 'UL', 'OL', 'DL', 'DT', 'DD',
+        'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'BLOCKQUOTE'
+    ]);
+    const IGNORED_UI_SELECTOR = '.comment-paragraph-indicator, .buttons, .tooltiptext';
+
+    function getMainElement() {
+        return document.querySelector('#mdbook-content main, #content main, main');
+    }
+
+    function getMenuLeftButtons() {
+        return document.querySelector('#mdbook-menu-bar .left-buttons, #menu-bar .left-buttons');
+    }
+
+    function normalizeWhitespace(str) {
+        return String(str || '').trim().replace(/\s+/g, ' ');
+    }
+
+    function escapeRegExp(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
     function hashString(str) {
         let hash = 5381;
-        const clean = str.trim().replace(/\s+/g, ' ');
+        const clean = normalizeWhitespace(str);
         for (let i = 0; i < clean.length; i++) {
             hash = ((hash << 5) + hash) + clean.charCodeAt(i);
         }
         return (hash >>> 0).toString(16);
     }
 
+    function isMermaidElement(el) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+        if (
+            el.classList.contains('mermaid') ||
+            el.classList.contains('mermaid-svg') ||
+            el.tagName === 'svg' ||
+            el.tagName === 'SVG' ||
+            el.getAttribute('data-processed') === 'true' ||
+            el.closest('.mermaid')
+        ) {
+            return true;
+        }
+        if (el.tagName === 'PRE' && el.querySelector('.mermaid, code.language-mermaid')) {
+            return true;
+        }
+        return false;
+    }
+
+    function getBlockTextNodes(block) {
+        if (!block) return [];
+        const nodes = [];
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => {
+                const parentEl = node.parentElement;
+                if (!parentEl || parentEl.closest(IGNORED_UI_SELECTOR)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        let node;
+        while ((node = walker.nextNode())) {
+            nodes.push(node);
+        }
+        return nodes;
+    }
+
     function getCleanText(el) {
         if (!el) return '';
-        const clone = el.cloneNode(true);
-        const indicators = clone.querySelectorAll('.comment-paragraph-indicator');
-        indicators.forEach(ind => ind.remove());
-        return clone.textContent;
+        return getBlockTextNodes(el).map(n => n.nodeValue).join('');
     }
 
     function getBlockElements() {
-        const rawBlocks = document.querySelectorAll(
-            '#mdbook-content main > p, ' +
-            '#mdbook-content main > li, ' +
-            '#mdbook-content main > h1, ' +
-            '#mdbook-content main > h2, ' +
-            '#mdbook-content main > h3, ' +
-            '#mdbook-content main > h4, ' +
-            '#mdbook-content main > h5, ' +
-            '#mdbook-content main > h6, ' +
-            '#mdbook-content main > pre, ' +
-            '#mdbook-content main > blockquote'
-        );
-        return Array.from(rawBlocks).filter(el => {
-            const isMermaid = el.classList.contains('mermaid') || 
-                             el.querySelector('.mermaid') || 
-                             el.tagName === 'svg' || 
-                             el.classList.contains('mermaid-svg') ||
-                             el.getAttribute('data-processed') === 'true';
-            return !isMermaid;
-        });
+        const main = getMainElement();
+        if (!main) return [];
+        const rawBlocks = main.querySelectorAll(BLOCK_SELECTOR);
+        return Array.from(rawBlocks).filter(el => !isMermaidElement(el));
     }
 
     function getBlockIndex(el) {
-        const blocks = getBlockElements();
-        return Array.from(blocks).indexOf(el);
+        return getBlockElements().indexOf(el);
     }
 
-    function findBlockElement(blockIdx, hash, tagName) {
-        const blocks = getBlockElements();
-        const targetTag = (tagName || '').toUpperCase();
-
-        // 1. Match by index and hash
-        if (blockIdx >= 0 && blockIdx < blocks.length) {
-            const el = blocks[blockIdx];
-            if (hashString(getCleanText(el)) === hash) {
-                return el;
-            }
+    function getLowestCommonAncestor(nodeA, nodeB) {
+        if (!nodeA) return nodeB || null;
+        if (!nodeB || nodeA === nodeB) return nodeA;
+        const ancestors = new Set();
+        let cur = nodeA;
+        while (cur) {
+            ancestors.add(cur);
+            cur = cur.parentNode;
         }
-        // 2. Hash scan fallback
-        for (let el of blocks) {
-            if (hashString(getCleanText(el)) === hash) {
-                return el;
-            }
-        }
-        // 3. Match by index and tagName
-        if (blockIdx >= 0 && blockIdx < blocks.length) {
-            const el = blocks[blockIdx];
-            if (el.tagName.toUpperCase() === targetTag) {
-                return el;
-            }
-        }
-        // 4. Neighborhood scan fallback
-        const maxOffset = 5;
-        for (let offset = 1; offset <= maxOffset; offset++) {
-            const upperIdx = blockIdx + offset;
-            if (upperIdx < blocks.length) {
-                const el = blocks[upperIdx];
-                if (el.tagName.toUpperCase() === targetTag) {
-                    return el;
-                }
-            }
-            const lowerIdx = blockIdx - offset;
-            if (lowerIdx >= 0) {
-                const el = blocks[lowerIdx];
-                if (el.tagName.toUpperCase() === targetTag) {
-                    return el;
-                }
-            }
-        }
-        // 5. Global scan fallback for tagName
-        for (let el of blocks) {
-            if (el.tagName.toUpperCase() === targetTag) {
-                return el;
-            }
+        cur = nodeB;
+        while (cur) {
+            if (ancestors.has(cur)) return cur;
+            cur = cur.parentNode;
         }
         return null;
     }
 
-    function getSelectionOffsets(block, range) {
-        let startOffset = 0;
-        let endOffset = 0;
-        let currentLength = 0;
-        let foundStart = false;
-        let foundEnd = false;
+    function getSelectedTextNodesInMain(main, range) {
+        const textNodes = getBlockTextNodes(main);
+        const selected = [];
+        for (const node of textNodes) {
+            const len = node.nodeValue.length;
+            if (len === 0) continue;
+            try {
+                if (range.comparePoint(node, len) > -1 && range.comparePoint(node, 0) < 1) {
+                    const localStart = (node === range.startContainer) ? range.startOffset : 0;
+                    const localEnd = (node === range.endContainer) ? range.endOffset : len;
+                    if (localEnd > localStart) {
+                        selected.push({ node, localStart, localEnd });
+                    }
+                }
+            } catch (e) {
+                // Ignore detached nodes or cross-document ranges.
+            }
+        }
+        return selected;
+    }
 
-        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        while (node = walker.nextNode()) {
-            const nodeLen = node.length;
-            if (!foundStart && node === range.startContainer) {
-                startOffset = currentLength + range.startOffset;
-                foundStart = true;
+    function getSelectionOffsets(block, range) {
+        const textNodes = getBlockTextNodes(block);
+        let currentLength = 0;
+        let startOffset = -1;
+        let endOffset = -1;
+
+        for (const node of textNodes) {
+            const len = node.nodeValue.length;
+            if (len > 0) {
+                try {
+                    if (range.comparePoint(node, len) > -1 && range.comparePoint(node, 0) < 1) {
+                        const localStart = (node === range.startContainer) ? range.startOffset : 0;
+                        const localEnd = (node === range.endContainer) ? range.endOffset : len;
+                        if (localEnd > localStart) {
+                            if (startOffset === -1) {
+                                startOffset = currentLength + localStart;
+                            }
+                            endOffset = currentLength + localEnd;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore detached nodes or cross-document ranges.
+                }
             }
-            if (!foundEnd && node === range.endContainer) {
-                endOffset = currentLength + range.endOffset;
-                foundEnd = true;
-            }
-            currentLength += nodeLen;
-            if (foundStart && foundEnd) break;
+            currentLength += len;
+        }
+
+        if (startOffset === -1 || endOffset <= startOffset) {
+            return null;
         }
         return { start: startOffset, end: endOffset };
+    }
+
+    function findQuoteRangeInText(text, quoteSel, posSel) {
+        const hasValidPos = posSel &&
+            typeof posSel.start === 'number' &&
+            typeof posSel.end === 'number' &&
+            posSel.start >= 0 &&
+            posSel.end > posSel.start &&
+            posSel.end <= text.length;
+
+        if (!quoteSel || !quoteSel.exact) {
+            if (hasValidPos) {
+                return { start: posSel.start, end: posSel.end, score: 1000 };
+            }
+            return null;
+        }
+
+        const exact = quoteSel.exact;
+        if (hasValidPos) {
+            const posSlice = text.substring(posSel.start, posSel.end);
+            if (posSlice === exact || normalizeWhitespace(posSlice) === normalizeWhitespace(exact)) {
+                return { start: posSel.start, end: posSel.end, score: 1000 };
+            }
+        }
+
+        const candidates = [];
+        let idx = text.indexOf(exact);
+        while (idx !== -1) {
+            candidates.push({ start: idx, end: idx + exact.length });
+            idx = text.indexOf(exact, idx + 1);
+        }
+
+        if (candidates.length === 0) {
+            const trimmed = exact.trim();
+            if (trimmed.length > 0) {
+                const parts = trimmed.split(/\s+/).map(escapeRegExp);
+                const regex = new RegExp(parts.join('\\s+'), 'g');
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    candidates.push({ start: match.index, end: match.index + match[0].length });
+                    if (match[0].length === 0) {
+                        regex.lastIndex++;
+                    }
+                }
+            }
+        }
+
+        if (candidates.length === 0) {
+            return null;
+        }
+
+        const prefix = quoteSel.prefix || '';
+        const suffix = quoteSel.suffix || '';
+        const normPrefix = normalizeWhitespace(prefix);
+        const normSuffix = normalizeWhitespace(suffix);
+
+        let best = null;
+        for (const cand of candidates) {
+            let score = 100;
+            if (prefix) {
+                const rawBefore = text.substring(Math.max(0, cand.start - prefix.length), cand.start);
+                const wideBefore = text.substring(Math.max(0, cand.start - prefix.length - 10), cand.start);
+                if (rawBefore === prefix) {
+                    score += 200;
+                } else if (normPrefix && normalizeWhitespace(wideBefore).endsWith(normPrefix)) {
+                    score += 150;
+                }
+            }
+            if (suffix) {
+                const rawAfter = text.substring(cand.end, Math.min(text.length, cand.end + suffix.length));
+                const wideAfter = text.substring(cand.end, Math.min(text.length, cand.end + suffix.length + 10));
+                if (rawAfter === suffix) {
+                    score += 200;
+                } else if (normSuffix && normalizeWhitespace(wideAfter).startsWith(normSuffix)) {
+                    score += 150;
+                }
+            }
+            if (posSel && typeof posSel.start === 'number') {
+                const dist = Math.abs(cand.start - posSel.start);
+                score += Math.max(0, 50 - Math.min(50, dist / 10));
+            }
+            if (!best || score > best.score) {
+                best = { start: cand.start, end: cand.end, score };
+            }
+        }
+
+        return best;
+    }
+
+    function resolveAnnotationAnchor(anno, blocks) {
+        const target = anno && anno.target;
+        if (!target || typeof target !== 'object') return null;
+
+        const selectors = Array.isArray(target.selector) ? target.selector : [];
+        const quoteSel = selectors.find(s => s.type === 'TextQuoteSelector');
+        const posSel = selectors.find(s => s.type === 'TextPositionSelector');
+        const fragSel = selectors.find(s => s.type === 'FragmentSelector');
+
+        let blockIdx = -1;
+        let blockHash = '';
+        let targetTag = '';
+        if (fragSel && fragSel.value) {
+            const params = new URLSearchParams(fragSel.value);
+            const parsedIdx = parseInt(params.get('blockIdx'), 10);
+            if (!Number.isNaN(parsedIdx)) {
+                blockIdx = parsedIdx;
+            }
+            blockHash = params.get('blockHash') || '';
+            targetTag = (params.get('tagName') || '').toUpperCase();
+        }
+
+        const blockTexts = blocks.map(el => getCleanText(el));
+        const blockHashes = blockTexts.map(txt => hashString(txt));
+
+        // 1. Quote-backed annotations (text selection)
+        if (quoteSel && quoteSel.exact) {
+            if (blockIdx >= 0 && blockIdx < blocks.length && blockHash && blockHashes[blockIdx] === blockHash) {
+                const range = findQuoteRangeInText(blockTexts[blockIdx], quoteSel, posSel);
+                if (range) {
+                    return { blockElement: blocks[blockIdx], start: range.start, end: range.end };
+                }
+            }
+
+            if (blockHash) {
+                let bestHashMatch = null;
+                for (let i = 0; i < blocks.length; i++) {
+                    if (blockHashes[i] !== blockHash) continue;
+                    const range = findQuoteRangeInText(blockTexts[i], quoteSel, posSel);
+                    if (!range) continue;
+                    const tagBonus = (targetTag && blocks[i].tagName.toUpperCase() === targetTag) ? 100 : 0;
+                    const distPenalty = blockIdx >= 0 ? Math.abs(i - blockIdx) * 0.1 : 0;
+                    const totalScore = range.score + tagBonus - distPenalty;
+                    if (!bestHashMatch || totalScore > bestHashMatch.totalScore) {
+                        bestHashMatch = { blockElement: blocks[i], start: range.start, end: range.end, totalScore };
+                    }
+                }
+                if (bestHashMatch) {
+                    return {
+                        blockElement: bestHashMatch.blockElement,
+                        start: bestHashMatch.start,
+                        end: bestHashMatch.end
+                    };
+                }
+            }
+
+            if (blockIdx >= 0 && blockIdx < blocks.length) {
+                const el = blocks[blockIdx];
+                if (!targetTag || el.tagName.toUpperCase() === targetTag) {
+                    const range = findQuoteRangeInText(blockTexts[blockIdx], quoteSel, posSel);
+                    if (range) {
+                        return { blockElement: el, start: range.start, end: range.end };
+                    }
+                }
+            }
+
+            const rawMatches = [];
+            for (let i = 0; i < blocks.length; i++) {
+                const range = findQuoteRangeInText(blockTexts[i], quoteSel, posSel);
+                if (range) {
+                    rawMatches.push({ idx: i, el: blocks[i], range });
+                }
+            }
+
+            if (rawMatches.length > 0) {
+                const filtered = rawMatches.filter(a => {
+                    const aTag = a.el.tagName.toUpperCase();
+                    const hasInnerMatch = rawMatches.some(b => {
+                        if (a === b || !a.el.contains(b.el)) return false;
+                        const bTag = b.el.tagName.toUpperCase();
+                        if (targetTag && aTag === targetTag && bTag !== targetTag) {
+                            return false;
+                        }
+                        return true;
+                    });
+                    return !hasInnerMatch;
+                });
+
+                const pool = filtered.length > 0 ? filtered : rawMatches;
+                let best = null;
+                for (const cand of pool) {
+                    const tagBonus = (targetTag && cand.el.tagName.toUpperCase() === targetTag) ? 100 : 0;
+                    const distPenalty = blockIdx >= 0 ? Math.abs(cand.idx - blockIdx) * 0.1 : 0;
+                    const totalScore = cand.range.score + tagBonus - distPenalty;
+                    if (!best || totalScore > best.totalScore) {
+                        best = { blockElement: cand.el, start: cand.range.start, end: cand.range.end, totalScore };
+                    }
+                }
+                if (best) {
+                    return { blockElement: best.blockElement, start: best.start, end: best.end };
+                }
+            }
+
+            return null;
+        }
+
+        // 2. Position-only annotations (legacy/no quote selector)
+        if (posSel && typeof posSel.start === 'number' && typeof posSel.end === 'number' && posSel.end > posSel.start) {
+            if (blockIdx >= 0 && blockIdx < blocks.length && blockHash && blockHashes[blockIdx] === blockHash) {
+                if (posSel.end <= blockTexts[blockIdx].length) {
+                    return { blockElement: blocks[blockIdx], start: posSel.start, end: posSel.end };
+                }
+            }
+            if (blockHash) {
+                for (let i = 0; i < blocks.length; i++) {
+                    if (blockHashes[i] === blockHash && posSel.end <= blockTexts[i].length) {
+                        return { blockElement: blocks[i], start: posSel.start, end: posSel.end };
+                    }
+                }
+            }
+            if (blockIdx >= 0 && blockIdx < blocks.length &&
+                (!targetTag || blocks[blockIdx].tagName.toUpperCase() === targetTag) &&
+                posSel.end <= blockTexts[blockIdx].length) {
+                return { blockElement: blocks[blockIdx], start: posSel.start, end: posSel.end };
+            }
+            return null;
+        }
+
+        // 3. Section-level annotations (FragmentSelector only)
+        if (!fragSel) return null;
+
+        if (blockIdx >= 0 && blockIdx < blocks.length && blockHash && blockHashes[blockIdx] === blockHash) {
+            return { blockElement: blocks[blockIdx] };
+        }
+
+        if (blockHash) {
+            let bestBlock = null;
+            let bestScore = -Infinity;
+            for (let i = 0; i < blocks.length; i++) {
+                if (blockHashes[i] !== blockHash) continue;
+                const tagBonus = (targetTag && blocks[i].tagName.toUpperCase() === targetTag) ? 100 : 0;
+                const distPenalty = blockIdx >= 0 ? Math.abs(i - blockIdx) * 0.1 : 0;
+                const score = tagBonus - distPenalty;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestBlock = blocks[i];
+                }
+            }
+            if (bestBlock) {
+                return { blockElement: bestBlock };
+            }
+        }
+
+        if (blockIdx >= 0 && blockIdx < blocks.length && targetTag && blocks[blockIdx].tagName.toUpperCase() === targetTag) {
+            return { blockElement: blocks[blockIdx] };
+        }
+
+        if (blockIdx >= 0 && targetTag) {
+            const maxOffset = 5;
+            for (let offset = 1; offset <= maxOffset; offset++) {
+                const upperIdx = blockIdx + offset;
+                if (upperIdx >= 0 && upperIdx < blocks.length && blocks[upperIdx].tagName.toUpperCase() === targetTag) {
+                    return { blockElement: blocks[upperIdx] };
+                }
+                const lowerIdx = blockIdx - offset;
+                if (lowerIdx >= 0 && lowerIdx < blocks.length && blocks[lowerIdx].tagName.toUpperCase() === targetTag) {
+                    return { blockElement: blocks[lowerIdx] };
+                }
+            }
+        }
+
+        return null;
     }
 
     // ==========================================
     // 4. In-page Highlighting Loader
     // ==========================================
     function clearPageHighlights() {
-        // 1. Clean up Mark.js marks
+        threadAnchorElements.clear();
+
+        // 1. Clean up pure-DOM comment <mark> elements safely
         const marks = document.querySelectorAll('mark.comment-highlight');
         marks.forEach(mark => {
             const parent = mark.parentNode;
-            if (parent) {
-                parent.replaceChild(document.createTextNode(mark.textContent), mark);
-                parent.normalize();
+            if (!parent) return;
+            while (mark.firstChild) {
+                parent.insertBefore(mark.firstChild, mark);
             }
+            parent.removeChild(mark);
+            parent.normalize();
         });
 
         // 2. Clean up section-level highlights
@@ -224,54 +525,103 @@
         sections.forEach(sec => {
             sec.classList.remove('comment-section-highlight', 'comment-highlight', 'resolved-highlight');
             delete sec.dataset.threadId;
+            delete sec.dataset.threadIds;
         });
+    }
+
+    function highlightTextRange(blockElement, start, end, resolved, threadId) {
+        if (typeof start !== 'number' || typeof end !== 'number' || end <= start) {
+            return [];
+        }
+
+        const textNodes = getBlockTextNodes(blockElement);
+        const slices = [];
+        let currentOffset = 0;
+
+        for (const node of textNodes) {
+            const len = node.nodeValue.length;
+            const nodeStart = currentOffset;
+            const nodeEnd = currentOffset + len;
+            currentOffset = nodeEnd;
+
+            if (nodeEnd <= start || nodeStart >= end) {
+                continue;
+            }
+
+            const sliceStart = Math.max(0, start - nodeStart);
+            const sliceEnd = Math.min(len, end - nodeStart);
+            if (sliceEnd > sliceStart) {
+                slices.push({ node, sliceStart, sliceEnd });
+            }
+        }
+
+        const createdMarks = [];
+        const className = resolved ? 'comment-highlight resolved-highlight' : 'comment-highlight';
+
+        for (const { node, sliceStart, sliceEnd } of slices) {
+            let targetNode = node;
+            if (sliceEnd < targetNode.nodeValue.length) {
+                targetNode.splitText(sliceEnd);
+            }
+            if (sliceStart > 0) {
+                targetNode = targetNode.splitText(sliceStart);
+            }
+
+            const parent = targetNode.parentNode;
+            if (!parent) continue;
+
+            const mark = document.createElement('mark');
+            mark.className = className;
+            mark.dataset.threadId = threadId;
+            parent.replaceChild(mark, targetNode);
+            mark.appendChild(targetNode);
+            createdMarks.push(mark);
+        }
+
+        return createdMarks;
     }
 
     function applyPageHighlights() {
         clearPageHighlights();
-        
+
+        const blocks = getBlockElements();
+        if (blocks.length === 0) return;
+
         // Find parent highlights (those targeting the document directly)
         const parentAnnos = annotationsList.filter(a => a.target && typeof a.target === 'object');
 
         parentAnnos.forEach(anno => {
-            const target = anno.target;
-            const selectors = target.selector || [];
-            
-            const quoteSel = selectors.find(s => s.type === 'TextQuoteSelector');
-            const posSel = selectors.find(s => s.type === 'TextPositionSelector');
-            const fragSel = selectors.find(s => s.type === 'FragmentSelector');
+            const anchor = resolveAnnotationAnchor(anno, blocks);
+            if (!anchor || !anchor.blockElement) return;
 
-            if (!fragSel) return;
-
-            // Parse Fragment values
-            const params = new URLSearchParams(fragSel.value);
-            const blockIdx = parseInt(params.get('blockIdx'), 10);
-            const hash = params.get('blockHash');
-            const tagName = params.get('tagName');
-
-            const blockElement = findBlockElement(blockIdx, hash, tagName);
-            if (!blockElement) return;
-
-            if (posSel) {
-                const start = posSel.start;
-                const length = posSel.end - posSel.start;
-
-                if (typeof window.Mark === 'function') {
-                    const marker = new window.Mark(blockElement);
-                    const resolvedClass = anno.resolved ? 'comment-highlight resolved-highlight' : 'comment-highlight';
-                    
-                    marker.markRanges([{ start, length }], {
-                        className: resolvedClass,
-                        each: (node) => {
-                            node.dataset.threadId = anno.id;
-                        }
-                    });
+            if (typeof anchor.start === 'number' && typeof anchor.end === 'number') {
+                const marks = highlightTextRange(
+                    anchor.blockElement,
+                    anchor.start,
+                    anchor.end,
+                    Boolean(anno.resolved),
+                    anno.id
+                );
+                if (marks.length > 0) {
+                    threadAnchorElements.set(anno.id, marks);
                 }
             } else {
-                // Section-level annotation: highlight the block element directly
-                const resolvedClass = anno.resolved ? 'comment-section-highlight comment-highlight resolved-highlight' : 'comment-section-highlight comment-highlight';
-                blockElement.classList.add(...resolvedClass.split(' '));
-                blockElement.dataset.threadId = anno.id;
+                const el = anchor.blockElement;
+                if (anno.resolved) {
+                    if (!el.classList.contains('comment-section-highlight')) {
+                        el.classList.add('resolved-highlight');
+                    }
+                } else {
+                    el.classList.remove('resolved-highlight');
+                }
+                el.classList.add('comment-section-highlight', 'comment-highlight');
+                el.dataset.threadId = anno.id;
+                const existingIds = (el.dataset.threadIds || '').split(/\s+/).filter(Boolean);
+                if (!existingIds.includes(anno.id)) {
+                    existingIds.push(anno.id);
+                }
+                el.dataset.threadIds = existingIds.join(' ');
+                threadAnchorElements.set(anno.id, [el]);
             }
         });
     }
@@ -280,15 +630,21 @@
     // 5. Selection Listener & Popover UI
     // ==========================================
     function initSelectionTracker() {
-        const main = document.querySelector('#mdbook-content main');
+        const main = getMainElement();
         if (!main) return;
 
         // Popover DOM Element
         popoverElement = document.createElement('div');
         popoverElement.className = 'comment-popover';
-        popoverElement.innerHTML = 'Add Comment';
+        popoverElement.textContent = 'Add Comment';
         popoverElement.style.display = 'none';
         document.body.appendChild(popoverElement);
+
+        popoverElement.addEventListener('mousedown', (e) => {
+            // Preserve current text selection until click completes.
+            e.preventDefault();
+            e.stopPropagation();
+        });
 
         popoverElement.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -296,7 +652,8 @@
                 openSidebar();
                 openNewThreadBox(activeSelection);
                 popoverElement.style.display = 'none';
-                window.getSelection().removeAllRanges();
+                const sel = window.getSelection();
+                if (sel) sel.removeAllRanges();
             }
         });
 
@@ -309,12 +666,24 @@
                 popoverElement.style.display = 'none';
             }
         });
+
+        const hidePopover = () => {
+            if (popoverElement) {
+                popoverElement.style.display = 'none';
+            }
+        };
+        window.addEventListener('scroll', hidePopover, true);
+        window.addEventListener('resize', hidePopover);
     }
 
     function initHighlightClickListener() {
-        const main = document.querySelector('#mdbook-content main');
+        const main = getMainElement();
         if (!main) return;
         main.addEventListener('click', (e) => {
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                return;
+            }
             const highlight = e.target.closest('mark.comment-highlight, .comment-section-highlight');
             if (highlight) {
                 if (e.target.closest('a, button, input, textarea, .comment-paragraph-indicator')) {
@@ -330,72 +699,93 @@
         });
     }
 
-
     function handleTextSelection() {
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed) {
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
             activeSelection = null;
             return;
         }
 
         const range = selection.getRangeAt(0);
-        const main = document.querySelector('#mdbook-content main');
-        
-        // Ensure range is inside the main block
-        if (!main.contains(range.commonAncestorContainer)) {
+        const main = getMainElement();
+        if (!main) {
             activeSelection = null;
             return;
         }
 
-        // Find parent block element
-        let parentBlock = range.commonAncestorContainer;
-        if (parentBlock.nodeType === Node.TEXT_NODE) {
-            parentBlock = parentBlock.parentNode;
+        const selectedNodes = getSelectedTextNodesInMain(main, range);
+        if (selectedNodes.length === 0) {
+            activeSelection = null;
+            return;
         }
-        
-        const validTags = ['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'BLOCKQUOTE'];
-        while (parentBlock && !validTags.includes(parentBlock.tagName) && parentBlock !== main) {
+
+        let parentBlock = getLowestCommonAncestor(
+            selectedNodes[0].node,
+            selectedNodes[selectedNodes.length - 1].node
+        );
+        if (parentBlock && parentBlock.nodeType === Node.TEXT_NODE) {
             parentBlock = parentBlock.parentNode;
         }
 
-        if (parentBlock === main || !parentBlock || parentBlock.classList.contains('mermaid') || parentBlock.querySelector('.mermaid')) {
+        while (parentBlock && !BLOCK_TAG_SET.has(parentBlock.tagName) && parentBlock !== main) {
+            parentBlock = parentBlock.parentNode;
+        }
+
+        if (!parentBlock || parentBlock === main || isMermaidElement(parentBlock)) {
             activeSelection = null;
             return;
         }
 
         const offsets = getSelectionOffsets(parentBlock, range);
-        const textContent = getCleanText(parentBlock);
-        const selectedText = selection.toString();
+        if (!offsets || offsets.end <= offsets.start) {
+            activeSelection = null;
+            return;
+        }
 
-        if (!selectedText.trim()) {
+        const blockText = getCleanText(parentBlock);
+        const exactText = blockText.substring(offsets.start, offsets.end);
+        if (!exactText.trim()) {
             activeSelection = null;
             return;
         }
 
         // Calculate W3C quotes prefix & suffix context
-        const blockText = getCleanText(parentBlock);
-        const prefixStart = Math.max(0, offsets.start - 20);
+        const prefixStart = Math.max(0, offsets.start - 30);
         const prefix = blockText.substring(prefixStart, offsets.start);
-        const suffixEnd = Math.min(blockText.length, offsets.end + 20);
+        const suffixEnd = Math.min(blockText.length, offsets.end + 30);
         const suffix = blockText.substring(offsets.end, suffixEnd);
 
         activeSelection = {
             type: 'selection',
             blockIdx: getBlockIndex(parentBlock),
-            blockHash: hashString(textContent),
+            blockHash: hashString(blockText),
             tagName: parentBlock.tagName,
             textQuote: {
-                exact: selectedText,
+                exact: exactText,
                 prefix: prefix,
                 suffix: suffix
             },
             textRange: offsets
         };
 
-        // Display popover bubble above selection
-        const rect = range.getBoundingClientRect();
-        popoverElement.style.left = `${rect.left + window.scrollX + rect.width / 2}px`;
-        popoverElement.style.top = `${rect.top + window.scrollY - 36}px`;
+        // Display fixed viewport popover bubble above (or below if near top) selection
+        let rect = range.getBoundingClientRect();
+        if (!rect || (rect.width === 0 && rect.height === 0)) {
+            const clientRects = range.getClientRects();
+            if (clientRects.length > 0) {
+                rect = clientRects[0];
+            }
+        }
+        if (!rect || (rect.width === 0 && rect.height === 0)) {
+            activeSelection = null;
+            return;
+        }
+
+        const centerX = Math.min(Math.max(rect.left + rect.width / 2, 48), window.innerWidth - 48);
+        const aboveTop = rect.top - 10;
+        const topPos = aboveTop >= 44 ? aboveTop : Math.min(window.innerHeight - 16, rect.bottom + 36);
+        popoverElement.style.left = `${centerX}px`;
+        popoverElement.style.top = `${topPos}px`;
         popoverElement.style.display = 'block';
     }
 
@@ -404,15 +794,21 @@
     // ==========================================
     function initParagraphIndicators() {
         const blocks = getBlockElements();
-        
+        const indicatorTags = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'LI', 'P']);
+
         blocks.forEach(block => {
-            // Apply relative positioning to host container for absolute bubble positioning
+            const tag = block.tagName.toUpperCase();
+            if (!indicatorTags.has(tag)) return;
+            if (tag === 'P' && block.closest('td, th, li')) return;
+
+            block.classList.add('comment-annotatable-block');
             block.style.position = 'relative';
-            
-            // Check if page doesn't already have an indicator for this paragraph
-            let indicator = block.querySelector('.comment-paragraph-indicator');
+
+            // Check if block doesn't already have a direct indicator child
+            let indicator = block.querySelector(':scope > .comment-paragraph-indicator');
             if (!indicator) {
                 indicator = document.createElement('button');
+                indicator.type = 'button';
                 indicator.className = 'comment-paragraph-indicator';
                 indicator.setAttribute('title', 'Comment on this section');
                 indicator.innerHTML = `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>`;
@@ -477,7 +873,7 @@
         });
 
         // Add menu icon button in header menu bar next to theme painter
-        const menuLeft = document.querySelector('#mdbook-menu-bar .left-buttons');
+        const menuLeft = getMenuLeftButtons();
         if (menuLeft) {
             // 1. Repo Root Button (Home icon)
             const repoBtn = document.createElement('a');
@@ -554,6 +950,11 @@
 
     function focusThread(threadId) {
         currentOpenThreadId = threadId;
+        const targetAnno = annotationsList.find(a => a.id === threadId);
+        const showResolvedCheckbox = document.getElementById('show-resolved-comments');
+        if (targetAnno && targetAnno.resolved && showResolvedCheckbox && !showResolvedCheckbox.checked) {
+            showResolvedCheckbox.checked = true;
+        }
         renderThreadsList();
         
         // Scroll to thread card
@@ -570,6 +971,95 @@
     function formatTime(isoString) {
         const date = new Date(isoString);
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function safeAvatarUrl(rawUrl) {
+        const fallback = 'https://api.dicebear.com/7.x/adventurer/svg';
+        if (!rawUrl || typeof rawUrl !== 'string') return fallback;
+        if (/^(https?:\/\/|\/)/i.test(rawUrl)) return rawUrl;
+        return fallback;
+    }
+
+    function scrollElementIntoView(el) {
+        if (!el || !el.isConnected) return;
+
+        // 1. Ensure horizontal visibility inside overflowing wrappers (e.g. .table-wrapper, pre)
+        let horiz = el.parentElement;
+        while (horiz && horiz !== document.documentElement) {
+            const style = window.getComputedStyle(horiz);
+            const overflowX = style.overflowX;
+            const isHorizScrollable = overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay';
+            if (isHorizScrollable && horiz.scrollWidth > horiz.clientWidth + 1) {
+                const elRect = el.getBoundingClientRect();
+                const horizRect = horiz.getBoundingClientRect();
+                if (elRect.left < horizRect.left || elRect.right > horizRect.right) {
+                    const deltaX = (elRect.left + elRect.width / 2) - (horizRect.left + horizRect.width / 2);
+                    if (typeof horiz.scrollBy === 'function') {
+                        horiz.scrollBy({ left: deltaX, behavior: 'smooth' });
+                    } else {
+                        horiz.scrollLeft += deltaX;
+                    }
+                }
+            }
+            horiz = horiz.parentElement;
+        }
+
+        // 2. Account for fixed banner and sticky/fixed header bar obstructions
+        let topObstruction = 0;
+        const banner = document.getElementById('zipserver-latest-version-banner');
+        if (banner) {
+            const bRect = banner.getBoundingClientRect();
+            if (bRect.bottom > 0) {
+                topObstruction = Math.max(topObstruction, bRect.bottom);
+            }
+        }
+        const menuBar = document.querySelector('#mdbook-menu-bar, #menu-bar');
+        if (menuBar) {
+            const mStyle = window.getComputedStyle(menuBar);
+            if (mStyle.position === 'fixed' || mStyle.position === 'sticky') {
+                const mRect = menuBar.getBoundingClientRect();
+                if (mRect.bottom > topObstruction && mRect.top < window.innerHeight / 2) {
+                    topObstruction = Math.max(topObstruction, mRect.bottom);
+                }
+            }
+        }
+
+        // 3. Find inner vertical scroll container if present; otherwise scroll window
+        let scroller = null;
+        let cur = el.parentElement;
+        while (cur && cur !== document.documentElement) {
+            const style = window.getComputedStyle(cur);
+            const overflowY = style.overflowY;
+            const isScrollableStyle = overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+            if (isScrollableStyle && cur.scrollHeight > cur.clientHeight + 2 && cur.clientHeight <= window.innerHeight + 2) {
+                scroller = cur;
+                break;
+            }
+            cur = cur.parentElement;
+        }
+
+        const elRect = el.getBoundingClientRect();
+        const viewportBottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+        const viewportTop = scroller
+            ? Math.max(scroller.getBoundingClientRect().top, topObstruction)
+            : topObstruction;
+        const availableHeight = Math.max(0, viewportBottom - viewportTop);
+
+        let desiredTop = viewportTop + availableHeight / 2 - elRect.height / 2;
+        if (elRect.height > availableHeight * 0.8) {
+            desiredTop = viewportTop + 24;
+        }
+        const deltaY = elRect.top - desiredTop;
+
+        if (scroller) {
+            if (typeof scroller.scrollBy === 'function') {
+                scroller.scrollBy({ top: deltaY, behavior: 'smooth' });
+            } else {
+                scroller.scrollTop += deltaY;
+            }
+        } else {
+            window.scrollBy({ top: deltaY, behavior: 'smooth' });
+        }
     }
 
     /**
@@ -597,20 +1087,32 @@
             return;
         }
 
-        // Sort by blockIndex, then selection start offset
+        // Sort by live DOM document order, falling back to FragmentSelector blockIdx & TextPositionSelector start
         visibleParents.sort((a, b) => {
-            const aFrag = a.target.selector.find(s => s.type === 'FragmentSelector');
-            const bFrag = b.target.selector.find(s => s.type === 'FragmentSelector');
-            const aPos = a.target.selector.find(s => s.type === 'TextPositionSelector');
-            const bPos = b.target.selector.find(s => s.type === 'TextPositionSelector');
+            const aEl = (threadAnchorElements.get(a.id) || [])[0];
+            const bEl = (threadAnchorElements.get(b.id) || [])[0];
+            if (aEl && bEl && aEl !== bEl && aEl.isConnected && bEl.isConnected) {
+                const pos = aEl.compareDocumentPosition(bEl);
+                if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+                if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+            }
 
-            const aBlock = aFrag ? parseInt(new URLSearchParams(aFrag.value).get('blockIdx'), 10) : 0;
-            const bBlock = bFrag ? parseInt(new URLSearchParams(bFrag.value).get('blockIdx'), 10) : 0;
+            const aSelectors = Array.isArray(a.target && a.target.selector) ? a.target.selector : [];
+            const bSelectors = Array.isArray(b.target && b.target.selector) ? b.target.selector : [];
+            const aFrag = aSelectors.find(s => s.type === 'FragmentSelector');
+            const bFrag = bSelectors.find(s => s.type === 'FragmentSelector');
+            const aPos = aSelectors.find(s => s.type === 'TextPositionSelector');
+            const bPos = bSelectors.find(s => s.type === 'TextPositionSelector');
+
+            const aBlockRaw = aFrag ? parseInt(new URLSearchParams(aFrag.value || '').get('blockIdx'), 10) : NaN;
+            const bBlockRaw = bFrag ? parseInt(new URLSearchParams(bFrag.value || '').get('blockIdx'), 10) : NaN;
+            const aBlock = Number.isNaN(aBlockRaw) ? Number.MAX_SAFE_INTEGER : aBlockRaw;
+            const bBlock = Number.isNaN(bBlockRaw) ? Number.MAX_SAFE_INTEGER : bBlockRaw;
 
             if (aBlock !== bBlock) return aBlock - bBlock;
             
-            const aStart = aPos ? aPos.start : 0;
-            const bStart = bPos ? bPos.start : 0;
+            const aStart = (aPos && typeof aPos.start === 'number') ? aPos.start : 0;
+            const bStart = (bPos && typeof bPos.start === 'number') ? bPos.start : 0;
             return aStart - bStart;
         });
 
@@ -621,24 +1123,31 @@
             threadReplies.sort((a, b) => new Date(a.created) - new Date(b.created));
 
             // Extract selection quote if exists
-            const quoteSel = parent.target.selector.find(s => s.type === 'TextQuoteSelector');
+            const parentSelectors = Array.isArray(parent.target && parent.target.selector) ? parent.target.selector : [];
+            const quoteSel = parentSelectors.find(s => s.type === 'TextQuoteSelector');
             const hasQuote = quoteSel && quoteSel.exact;
 
             const card = document.createElement('div');
             card.className = `thread-card ${parent.resolved ? 'resolved-card' : ''}`;
             card.id = `thread-card-${parent.id}`;
+            card.dataset.threadId = parent.id;
+
+            const parentIdSafe = escapeHtml(parent.id);
+            const parentNameSafe = escapeHtml((parent.creator && parent.creator.name) || 'Anonymous');
+            const parentAvatarSafe = escapeHtml(safeAvatarUrl(parent.creator && parent.creator.avatar));
+            const parentBodySafe = escapeHtml((parent.body && parent.body.value) || '');
 
             let cardHTML = `
                 <div class="card-header">
                     <div class="card-author-info">
-                        <img src="${parent.creator.avatar || 'https://api.dicebear.com/7.x/adventurer/svg'}" alt="Avatar" class="avatar" crossorigin="anonymous">
+                        <img src="${parentAvatarSafe}" alt="Avatar" class="avatar" crossorigin="anonymous">
                         <div>
-                            <span class="author-name">${parent.creator.name}</span>
-                            <span class="timestamp">${formatTime(parent.created)}</span>
+                            <span class="author-name">${parentNameSafe}</span>
+                            <span class="timestamp">${escapeHtml(formatTime(parent.created))}</span>
                         </div>
                     </div>
                     <div class="card-actions">
-                        <button class="resolve-btn" data-id="${parent.id}" title="${parent.resolved ? 'Reopen Thread' : 'Resolve Thread'}">
+                        <button class="resolve-btn" data-id="${parentIdSafe}" title="${parent.resolved ? 'Reopen Thread' : 'Resolve Thread'}">
                             ${parent.resolved ? 'Reopen' : 'Resolve'}
                         </button>
                     </div>
@@ -648,17 +1157,17 @@
             if (hasQuote) {
                 cardHTML += `
                     <div class="selection-quote">
-                        "${quoteSel.exact}"
+                        "${escapeHtml(quoteSel.exact)}"
                     </div>
                 `;
             }
 
             // Main parent comment body
-            const canDeleteParent = true;
+            const canDeleteParent = !currentUser || Boolean(parent.creator && currentUser.id === parent.creator.id);
             cardHTML += `
                 <div class="comment-body">
-                    <p class="comment-text">${parent.body.value}</p>
-                    ${canDeleteParent ? `<button class="comment-delete-btn" data-id="${parent.id}" title="Delete comment"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>` : ''}
+                    <p class="comment-text">${parentBodySafe}</p>
+                    ${canDeleteParent ? `<button class="comment-delete-btn" data-id="${parentIdSafe}" title="Delete comment"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>` : ''}
                 </div>
             `;
 
@@ -666,19 +1175,23 @@
             if (threadReplies.length > 0) {
                 cardHTML += `<div class="replies-container">`;
                 threadReplies.forEach(reply => {
-                    const canDeleteReply = true;
+                    const canDeleteReply = !currentUser || Boolean(reply.creator && currentUser.id === reply.creator.id);
+                    const replyIdSafe = escapeHtml(reply.id);
+                    const replyNameSafe = escapeHtml((reply.creator && reply.creator.name) || 'Anonymous');
+                    const replyAvatarSafe = escapeHtml(safeAvatarUrl(reply.creator && reply.creator.avatar));
+                    const replyBodySafe = escapeHtml((reply.body && reply.body.value) || '');
                     cardHTML += `
                         <div class="reply-card">
                             <div class="reply-header">
-                                <img src="${reply.creator.avatar || 'https://api.dicebear.com/7.x/adventurer/svg'}" alt="Avatar" class="avatar-reply" crossorigin="anonymous">
+                                <img src="${replyAvatarSafe}" alt="Avatar" class="avatar-reply" crossorigin="anonymous">
                                 <div>
-                                    <span class="author-name-reply">${reply.creator.name}</span>
-                                    <span class="timestamp-reply">${formatTime(reply.created)}</span>
+                                    <span class="author-name-reply">${replyNameSafe}</span>
+                                    <span class="timestamp-reply">${escapeHtml(formatTime(reply.created))}</span>
                                 </div>
                             </div>
                             <div class="comment-body-reply">
-                                <p class="comment-text-reply">${reply.body.value}</p>
-                                ${canDeleteReply ? `<button class="comment-delete-btn-reply" data-id="${reply.id}" title="Delete reply"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>` : ''}
+                                <p class="comment-text-reply">${replyBodySafe}</p>
+                                ${canDeleteReply ? `<button class="comment-delete-btn-reply" data-id="${replyIdSafe}" title="Delete reply"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>` : ''}
                             </div>
                         </div>
                     `;
@@ -689,8 +1202,8 @@
             // Reply input box
             cardHTML += `
                 <div class="card-footer">
-                    <textarea class="reply-input" placeholder="Write a reply..." id="reply-input-${parent.id}"></textarea>
-                    <button class="reply-submit-btn" data-parent-id="${parent.id}">Reply</button>
+                    <textarea class="reply-input" placeholder="Write a reply..." id="reply-input-${parentIdSafe}"></textarea>
+                    <button class="reply-submit-btn" data-parent-id="${parentIdSafe}">Reply</button>
                 </div>
             `;
 
@@ -724,13 +1237,13 @@
         if (anchor.type === 'selection') {
             innerHTML += `
                 <div class="selection-quote">
-                    "${anchor.textQuote.exact}"
+                    "${escapeHtml(anchor.textQuote.exact)}"
                 </div>
             `;
         } else {
             innerHTML += `
                 <div class="paragraph-context">
-                    Annotating entire ${anchor.tagName.toLowerCase()} section
+                    Annotating entire ${escapeHtml(String(anchor.tagName || '').toLowerCase())} section
                 </div>
             `;
         }
@@ -800,8 +1313,8 @@
             if (saved) {
                 annotationsList.push(saved);
                 card.remove();
-                renderThreadsList();
                 applyPageHighlights();
+                renderThreadsList();
             }
         });
     }
@@ -816,8 +1329,8 @@
                     const updated = await CommentsAPI.resolveThread(id, !anno.resolved);
                     if (updated) {
                         anno.resolved = updated.resolved;
-                        renderThreadsList();
                         applyPageHighlights();
+                        renderThreadsList();
                     }
                 }
             });
@@ -860,8 +1373,8 @@
                     if (success) {
                         // Filter parent and all its replies targeting it
                         annotationsList = annotationsList.filter(a => a.id !== id && a.target !== id);
-                        renderThreadsList();
                         applyPageHighlights();
+                        renderThreadsList();
                     }
                 }
             });
@@ -884,21 +1397,30 @@
         // Click on thread card to scroll target element into view
         document.querySelectorAll('.thread-card:not(.new-thread-card)').forEach(card => {
             card.addEventListener('click', (e) => {
-                if (e.target.closest('a, button, input, textarea')) {
+                if (e.target.closest('a, button, input, textarea, select, label')) {
                     return;
                 }
-                const threadId = card.id.replace('thread-card-', '');
-                const targetElement = document.querySelector(`[data-thread-id="${threadId}"]`);
-                if (targetElement) {
-                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    
+                const threadId = card.dataset.threadId || card.id.replace('thread-card-', '');
+                let targets = (threadAnchorElements.get(threadId) || []).filter(el => el && el.isConnected);
+                if (targets.length === 0) {
+                    applyPageHighlights();
+                    targets = (threadAnchorElements.get(threadId) || []).filter(el => el && el.isConnected);
+                }
+                if (targets.length === 0) return;
+
+                document.querySelectorAll('.thread-card.focused-card').forEach(c => c.classList.remove('focused-card'));
+                card.classList.add('focused-card');
+
+                scrollElementIntoView(targets[0]);
+
+                targets.forEach(targetElement => {
                     targetElement.classList.remove('comment-highlight-flash');
                     void targetElement.offsetWidth; // trigger reflow
                     targetElement.classList.add('comment-highlight-flash');
                     setTimeout(() => {
                         targetElement.classList.remove('comment-highlight-flash');
                     }, 2000);
-                }
+                });
             });
         });
     }
@@ -1215,7 +1737,11 @@
                     transform: translateY(0);
                 }
                 html {
-                    margin-top: 60px !important;
+                    margin-top: var(--zipserver-banner-offset, 60px) !important;
+                }
+                #mdbook-menu-bar,
+                #menu-bar {
+                    top: var(--zipserver-banner-offset, 60px) !important;
                 }
                 @media (max-width: 600px) {
                     #zipserver-latest-version-banner {
@@ -1223,9 +1749,6 @@
                         align-items: flex-start;
                         gap: 8px;
                         padding: 12px 16px;
-                    }
-                    html {
-                        margin-top: 90px !important;
                     }
                 }
             </style>
@@ -1242,10 +1765,17 @@
             <a href="${escapeHtml(latestLink)}" class="zipserver-banner-btn">View Latest Version</a>
         `;
         document.body.appendChild(banner);
+
+        const updateBannerOffset = () => {
+            const height = banner.offsetHeight;
+            document.documentElement.style.setProperty('--zipserver-banner-offset', `${height}px`);
+        };
+        updateBannerOffset();
+        window.addEventListener('resize', updateBannerOffset);
     }
 
     function escapeHtml(str) {
-        return str
+        return String(str || '')
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
